@@ -125,7 +125,7 @@ A user reviewing historical processing of a document needs to see the same group
 - **FR-005**: Users MUST be able to create, rename, reorder, and delete groups (subject to active Document Type immutability rules).
 - **FR-006**: Users MUST be able to move existing fields into a group or back to header level.
 - **FR-007**: A field MUST belong to at most one group; ungrouped fields are header-level.
-- **FR-008**: Fields within a group are individually optional — the model fills what the document provides per item.
+- **FR-008**: Fields within a group are best-effort — the model fills what the document provides per item.
 - **FR-009**: The field description input MUST always be visible during authoring (never collapsed or hidden).
 - **FR-010**: The wizard MUST display authoring guidance text covering: disambiguation of same-concept fields at different levels, structural variability (table vs. inline text), and when to use repeatable vs. separate Document Types.
 - **FR-011**: Total fields tree-wide (top-level + all group children) MUST NOT exceed 50 per Document Type.
@@ -135,7 +135,7 @@ A user reviewing historical processing of a document needs to see the same group
 
 **Extraction**
 
-- **FR-015**: The extraction model MUST receive header fields and each group as separate sections, each with name, description, and field list.
+- **FR-015**: The extraction model MUST receive a single unified nested `fields` list — group entries include their children inline via a nested `fields` array, discriminated by `type` (e.g. `repeatable_group`, `single_object_group`). No separate sections key.
 - **FR-016**: The extraction result for a repeatable group MUST be an array — one item per occurrence found in the document.
 - **FR-017**: The extraction result for a single object group MUST be exactly one nested object, or absent if the group is optional and not found.
 - **FR-018**: Unknown or extra items in extraction results MUST be dropped.
@@ -147,7 +147,7 @@ A user reviewing historical processing of a document needs to see the same group
 - **FR-021**: Single object groups MUST be rendered as labeled cards below header fields, with a group-level confidence chip (average of field confidence scores) and editable field-value pairs.
 - **FR-022**: Optional single object groups not found in the document MUST still render as a card with a "Not found in this document" label.
 - **FR-023**: Repeatable groups MUST be rendered as labeled sections with an accordion/tab strip; items collapsed by default except the first and any with warnings.
-- **FR-024**: Repeatable group items with missing required fields or confidence below threshold MUST be visually flagged with a warning badge.
+- **FR-024**: Repeatable group items with missing required fields or confidence below threshold (reusing the existing system-wide confidence threshold constant) MUST be visually flagged with a warning badge.
 - **FR-025**: Field values inside group items MUST be editable inline — same affordance as header-level fields.
 - **FR-026**: A repeatable group with no extracted items MUST display "No items were extracted for this group."
 
@@ -158,7 +158,7 @@ A user reviewing historical processing of a document needs to see the same group
 
 **API Contract**
 
-- **FR-029**: The record detail endpoint's flat `field_values` list MUST be replaced by a unified `fields` list (polymorphic by `field_type`) — hard cutover, no versioned endpoint.
+- **FR-029**: The record detail endpoint's flat `field_values` list MUST be replaced by a unified `fields` list (polymorphic by `field_type`) — hard cutover, no versioned endpoint. Acceptable as a breaking change because all consumers are internal to this product and will be migrated in the same release (see FR-030, FR-031).
 - **FR-030**: All in-product consumers (UI, internal tooling, API tests) MUST be fully migrated to the new shape before deploy; the deploy is a single coordinated release.
 - **FR-031**: Release notes MUST call out this as a breaking change for external consumers of the record detail endpoint.
 
