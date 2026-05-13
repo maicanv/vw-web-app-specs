@@ -14,7 +14,7 @@
 
 ## Summary
 
-Add structured field grouping to Document Types. Users define header-level fields and named Groups (Repeatable or Single object) on the Fields step of the Document Type wizard. The extraction model receives groups as separate sections, returns grouped results, and the record detail endpoint is updated (hard cutover) to return `header` + `groups` instead of `field_values`. Both the record detail page and the history detail view render the grouped structure — repeatable groups as accordions, single object groups as cards. See `research.md` for architectural decisions and `data-model.md` for the full entity model and API shape.
+Add structured field grouping to Document Types. Users define top-level (header) fields and named Group fields (Repeatable or Single object) on the Fields step of the Document Type wizard. Groups are expressed as `DocumentTypeField` rows with `field_type = repeatable_group | single_object_group`; member fields point back via `parent_field` self-FK. The extraction model receives a single nested `fields` list, returns grouped results, and the record detail endpoint is updated (hard cutover) to return a unified `fields` list instead of `field_values`. Both the record detail page and the history detail view render the grouped structure — repeatable groups as accordions, single object groups as cards. See `research.md` for architectural decisions and `data-model.md` for the full entity model and API shape.
 
 ---
 
@@ -22,12 +22,12 @@ Add structured field grouping to Document Types. Users define header-level field
 
 **Language/Version**: Python 3.12 (Django 4.2, DRF), TypeScript (React 18, Vite)  
 **Primary Dependencies**: Django DRF, Celery, Pydantic (vw-llm-app), React, Mantine UI, TanStack Query, hello-pangea/dnd  
-**Storage**: PostgreSQL — two Django migrations (new `FieldGroup` model; two new nullable columns on `ExtractedFieldValue`)  
+**Storage**: PostgreSQL — one Django migration (nullable `parent_field` self-FK on `DocumentTypeField`; nullable `group_item_index` on `ExtractedFieldValue`)  
 **Testing**: pytest (Django), Vitest (React)  
 **Target Platform**: Web application — Django REST API + React SPA  
 **Performance Goals**: Record detail page renders at same speed as current flat view; no additional N+1 queries  
 **Constraints**: Hard cutover on record detail API (all consumers migrate before deploy); extraction quality gate (5 fixture docs) must pass before rollout  
-**Scale/Scope**: Max 50 fields (header + groups combined), 10 groups, 200 items per repeatable group per Document Type
+**Scale/Scope**: Max 50 fields tree-wide (top-level + all group children), 200 items per repeatable group per Document Type
 
 ---
 
@@ -37,13 +37,13 @@ Add structured field grouping to Document Types. Users define header-level field
 
 | Principle | Status | Notes |
 |-----------|--------|-------|
-| I. Protect Sensitive Data | ✅ Pass | `FieldGroup` is org-scoped via `DocumentType → Organisation`. `ExtractedFieldValue` group FK inherits same org boundary. No new PII surface introduced. |
-| II. Respect the Architecture | ✅ Pass | New `FieldGroup` model follows the exact pattern of `DocumentTypeField` (FK to DocumentType, codename uniqueness, immutability on active). Extraction extension follows existing `_extract()` service pattern in vw-llm-app. Frontend reuses `ConfidenceBar`, `FieldRow`, and hello-pangea/dnd already in `FieldsStep.tsx`. |
+| I. Protect Sensitive Data | ✅ Pass | Group fields are org-scoped via `DocumentType → Organisation`. `ExtractedFieldValue` parent group is reachable via `document_type_field.parent_field` — same org boundary. No new PII surface introduced. |
+| II. Respect the Architecture | ✅ Pass | `parent_field` self-FK on `DocumentTypeField` follows the existing model's pattern (codename uniqueness, immutability on active). No new model or table introduced. Extraction extension follows existing `_extract()` service pattern in vw-llm-app. Frontend reuses `ConfidenceBar`, `FieldRow`, and hello-pangea/dnd already in `FieldsStep.tsx`. |
 | III. Test What Matters | ✅ Pass | Extraction quality gate (5 real-world fixture docs) is a hard rollout prerequisite. Django model tests cover limits, immutability, and group/item_index semantics. Frontend unit tests cover group rendering paths (empty, warning, not_found states). |
 | IV. Ship Incrementally | ✅ Pass | Feature is decomposed into 4 independently testable P1/P2/P3 stories. Breaking API change is a hard cutover with all consumers migrated simultaneously — documented in contracts/record-detail-api.md. |
 | V. Make Failures Visible | ✅ Pass | Extraction structural errors for groups → treated as zero items (spec Q3), standard empty-state UI, error logged internally + captured by Sentry (same as existing extraction failure path). |
 
-**Post-design re-check**: No new violations introduced by Phase 1 design. The `ExtractedFieldValue` group FK uses `SET_NULL` (not CASCADE) so deleting a group definition does not silently destroy historical extraction data.
+**Post-design re-check**: No new violations introduced by Phase 1 design. `parent_field` uses CASCADE — safe because delete is blocked on active Document Types. No historical `ExtractedFieldValue` rows are affected (they retain their `document_type_field` FK; group membership is derived from `parent_field` on that field row).
 
 ---
 
@@ -66,19 +66,17 @@ specs/001-field-grouping/
 ```text
 backend/django/apps/document_entries/
 ├── models.py
-│   ├── FieldGroup         NEW model
-│   ├── DocumentTypeField         + nullable group FK
-│   └── ExtractedFieldValue       + nullable group FK + group_item_index
+│   ├── DocumentTypeField         + nullable parent_field self-FK
+│   │                             + RepeatableGroupConfig / SingleObjectGroupConfig FieldConfig variants
+│   └── ExtractedFieldValue       + nullable group_item_index
 ├── migrations/
-│   ├── 000N_add_document_type_group.py          NEW — FieldGroup table
-│   └── 000N+1_add_group_fields_to_extracted.py  NEW — 2 columns on ExtractedFieldValue
+│   └── 000N_add_field_grouping.py   NEW — parent_field + group_item_index (single migration)
 ├── serializers.py
-│   ├── FieldGroupSerializer              NEW
-│   ├── DocumentTypeSerializer                   UPDATED — include groups, enforce limits
-│   ├── DocumentTypeUpdateSerializer             UPDATED — group immutability on active
-│   └── ExtractionRecordDetailSerializer         UPDATED — remove field_values, add header+groups
+│   ├── DocumentTypeSerializer                   UPDATED — include group fields, enforce 50-field tree limit
+│   ├── DocumentTypeUpdateSerializer             UPDATED — group field immutability on active
+│   └── ExtractionRecordDetailSerializer         UPDATED — remove field_values, add unified fields list
 └── document_type_view_set.py
-    └── group CRUD nested actions                NEW (list/create/update/delete group; move field)
+    └── field CRUD already handles groups (group fields are DocumentTypeField rows)
 ```
 
 ### Source Code — LLM Service (vw-llm-app)
@@ -86,12 +84,12 @@ backend/django/apps/document_entries/
 ```text
 vw-llm-app/
 ├── actions/document_entry_side_effect_handler.py
-│   └── _extract()               UPDATED — pass groups dict; handle grouped _ExtractionResult
+│   └── _extract()               UPDATED — pass nested fields list; handle grouped _ExtractionResult
 ├── prompts/templates.py
-│   └── DOCUMENT_ENTRY_EXTRACTION_SYSTEM_PROMPT  UPDATED — groups section instructions
-│   └── extraction user prompt                   UPDATED — groups_json parameter
+│   └── DOCUMENT_ENTRY_EXTRACTION_SYSTEM_PROMPT  UPDATED — group field instructions
+│   └── extraction user prompt                   UPDATED — nested fields_json parameter
 └── (Pydantic models)
-    └── _ExtractionResult                        UPDATED — header dict + groups dict
+    └── _ExtractionResult                        UPDATED — single nested fields dict (recursive)
 ```
 
 ### Source Code — Frontend (React)
@@ -99,13 +97,13 @@ vw-llm-app/
 ```text
 client/src/app/documentEntry/
 ├── documentTypes/steps/FieldsStep.tsx
-│   └── UPDATED — group management panel (add/edit/delete/reorder groups; drag fields in/out)
+│   └── UPDATED — group management panel (add/edit/delete/reorder group fields; drag child fields in/out)
 │
 ├── records/ExtractionRecordDetailPage.tsx
-│   └── UPDATED — render header section + GroupCard + RepeatableGroupSection
+│   └── UPDATED — render unified fields list; GroupCard for single_object_group; RepeatableGroupSection for repeatable_group
 │
 └── application/history/actionRenderers/DocumentEntryRenderer.tsx
-    └── UPDATED — render header + read-only GroupCard + read-only RepeatableGroupSection
+    └── UPDATED — render unified fields list read-only with GroupCard + RepeatableGroupSection
 
 client/src/app/documentEntry/components/   (new shared components)
 ├── GroupCard.tsx                NEW — single object group display (edit mode + read-only mode)
@@ -116,4 +114,4 @@ client/src/app/documentEntry/components/   (new shared components)
 
 ## Complexity Tracking
 
-No Constitution violations. No unjustified complexity. `SET_NULL` on the group FK ensures historical `ExtractedFieldValue` rows are not deleted if a group definition is later modified during migration or rollback.
+No Constitution violations. No unjustified complexity. Groups are `DocumentTypeField` rows — no separate model, no separate serializer, no additional CRUD endpoints. One migration. CASCADE on `parent_field` is safe because delete is blocked on active Document Types; historical `ExtractedFieldValue` rows are unaffected.

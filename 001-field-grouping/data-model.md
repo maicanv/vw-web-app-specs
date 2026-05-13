@@ -5,32 +5,6 @@
 
 ---
 
-## New Model: `FieldGroup`
-
-```
-FieldGroup
-├── id                    UUID PK
-├── document_type         FK → DocumentType (CASCADE, related_name="groups")
-├── codename              CharField(100) — machine identifier, regex ^[a-zA-Z][a-zA-Z0-9_]*$
-├── name                  CharField(200)
-├── description           TextField (default="") — extraction hint to the model
-├── kind                  CharField choices: REPEATABLE | SINGLE_OBJECT
-├── optional              BooleanField (default=False) — only meaningful for SINGLE_OBJECT
-├── min_items             IntegerField (default=0, null=True) — only for REPEATABLE
-├── max_items             IntegerField (default=200, null=True) — only for REPEATABLE
-├── display_order         IntegerField (default=0)
-├── created_at            auto
-└── updated_at            auto
-
-Constraints:
-  UNIQUE (document_type, codename)  — deferred, same pattern as DocumentTypeField
-  CHECK: kind == REPEATABLE → optional ignored (handled by min_items=0)
-  CHECK: max_items >= min_items when both set
-  CHECK: max_items <= 200
-```
-
----
-
 ## Modified Model: `DocumentTypeField`
 
 **Added field** (nullable for backwards compatibility):
@@ -38,65 +12,90 @@ Constraints:
 ```
 DocumentTypeField
 ├── ... (all existing fields unchanged) ...
-└── group    FK → FieldGroup (SET_NULL, null=True, blank=True, related_name="fields")
-             — null means header-level
+└── parent_field  FK → self (CASCADE, null=True, blank=True, related_name="children")
+                  — null means top-level (header) field
+                  — non-null means this field belongs to the parent group field
 ```
 
-**Migration note**: Existing fields all get `group=NULL` (header level). No data loss.
+**Migration note**: All existing fields get `parent_field=NULL` (top-level). No data loss.
+
+### New `FieldConfig` variants
+
+Two new variants added to the `field_type` / `FieldConfig` discriminated union:
+
+```
+RepeatableGroupConfig
+├── description   TextField (default="") — extraction hint to the model
+├── min_items     IntegerField (default=0) — minimum items to extract
+└── max_items     IntegerField (default=200) — hard cap on items
+
+SingleObjectGroupConfig
+├── description   TextField (default="") — extraction hint to the model
+└── optional      BooleanField (default=False) — if True and absent, omit from output
+```
+
+A `DocumentTypeField` with `field_type = repeatable_group` or `field_type = single_object_group`
+acts as a group container. Its children (via `parent_field`) are the member fields.
+
+**No separate `FieldGroup` model or DB table.**
 
 ---
 
 ## Modified Model: `ExtractedFieldValue`
 
-**Added fields** (both nullable for backwards compatibility):
+**Added field** (nullable for backwards compatibility):
 
 ```
 ExtractedFieldValue
 ├── ... (all existing fields unchanged) ...
-├── group             FK → FieldGroup (SET_NULL, null=True, blank=True)
-│                     — snapshot reference; null for header-level values
 └── group_item_index  IntegerField (null=True, blank=True)
-                      — 0-based index within repeatable group items
-                      — null for header-level and single-object group fields
+                      — 0-based index within a repeatable group's items
+                      — null for top-level and single_object_group fields
 ```
 
-**Group item semantics**:
-- Header field: `group=NULL`, `group_item_index=NULL`
-- Single object group field: `group=<group>`, `group_item_index=NULL`
-- Repeatable group field, item 0: `group=<group>`, `group_item_index=0`
-- Repeatable group field, item 1: `group=<group>`, `group_item_index=1`
+The parent group field is reachable via `document_type_field.parent_field` — no separate group FK needed.
 
-**Migration note**: All existing `ExtractedFieldValue` rows get `group=NULL`, `group_item_index=NULL`.
+**Group item semantics**:
+- Top-level field: `parent_field=NULL`, `group_item_index=NULL`
+- Single object group member: `parent_field=<group_field>`, `group_item_index=NULL`
+- Repeatable group member, item 0: `parent_field=<group_field>`, `group_item_index=0`
+- Repeatable group member, item 1: `parent_field=<group_field>`, `group_item_index=1`
+
+**Migration note**: All existing `ExtractedFieldValue` rows get `group_item_index=NULL`.
 
 ---
 
 ## Limits (constants)
 
 ```python
-MAX_FIELDS_PER_DOCUMENT_TYPE = 50   # existing — now counts header + all group fields
-MAX_GROUPS_PER_DOCUMENT_TYPE = 10   # new
-MAX_ITEMS_PER_REPEATABLE_GROUP = 200  # new
+MAX_FIELDS_PER_DOCUMENT_TYPE = 50   # tree-wide: top-level + all group children combined
+MAX_ITEMS_PER_REPEATABLE_GROUP = 200
 ```
+
+No separate group cap — group fields count toward the 50-field tree-wide limit.
 
 ---
 
 ## Immutability Rules (extended from existing field rules)
 
 When `DocumentType.status == ACTIVE`:
-- `FieldGroup.codename` → read-only (cannot be updated)
-- `FieldGroup` rows → cannot be deleted
-- `DocumentTypeField` rows inside a group → cannot be deleted, cannot be moved out
+- Group field `codename` → read-only (cannot be updated)
+- Group `DocumentTypeField` rows → cannot be deleted
+- Child `DocumentTypeField` rows → cannot be deleted, cannot be reparented
 
 Same enforcement point as existing field immutability: `DocumentTypeSerializer` / `DocumentTypeUpdateSerializer` validation.
+
+Delete is blocked on active types, so CASCADE on `parent_field` is safe — it only fires
+during schema teardown or hard-delete paths that are already gated.
 
 ---
 
 ## State Transitions
 
 ```
-FieldGroup lifecycle mirrors DocumentTypeField:
-  Draft DocumentType → group can be created / renamed / deleted / reordered
-  Active DocumentType → group is frozen (codename immutable, cannot delete, cannot remove fields)
+Group field lifecycle mirrors DocumentTypeField:
+  Draft DocumentType → group field can be created / renamed / deleted / reordered; children can be added/removed
+  Active DocumentType → group field is frozen (codename immutable, cannot delete, cannot remove children)
 ```
 
 ---
@@ -122,10 +121,10 @@ FieldGroup lifecycle mirrors DocumentTypeField:
 }
 ```
 
-**After (replacement)**:
+**After (replacement)** — single unified `fields` list, polymorphic by `field_type`:
 ```json
 {
-  "header": [
+  "fields": [
     {
       "id": "...",
       "field_codename": "invoice_number",
@@ -136,13 +135,12 @@ FieldGroup lifecycle mirrors DocumentTypeField:
       "confidence": 92,
       "is_critical": true,
       "display_order": 0
-    }
-  ],
-  "groups": {
-    "invoice_lines": {
-      "name": "Invoice Lines",
-      "kind": "repeatable",
-      "optional": false,
+    },
+    {
+      "field_codename": "invoice_lines",
+      "field_name": "Invoice Lines",
+      "field_type": "repeatable_group",
+      "description": "Table of line items.",
       "min_items": 0,
       "max_items": 200,
       "items": [
@@ -161,11 +159,12 @@ FieldGroup lifecycle mirrors DocumentTypeField:
         ]
       ]
     },
-    "sender": {
-      "name": "Sender",
-      "kind": "single_object",
+    {
+      "field_codename": "sender",
+      "field_name": "Sender",
+      "field_type": "single_object_group",
+      "description": "Sending party details.",
       "optional": true,
-      "items": null,
       "fields": [
         {
           "id": "...",
@@ -180,20 +179,19 @@ FieldGroup lifecycle mirrors DocumentTypeField:
         }
       ]
     }
-  }
+  ]
 }
 ```
 
-**Group absent (optional single object not found)**:
+**Optional single object group not found**:
 ```json
-"groups": {
-  "sender": {
-    "name": "Sender",
-    "kind": "single_object",
-    "optional": true,
-    "fields": null,
-    "not_found": true
-  }
+{
+  "field_codename": "sender",
+  "field_name": "Sender",
+  "field_type": "single_object_group",
+  "optional": true,
+  "fields": null,
+  "not_found": true
 }
 ```
 
@@ -201,19 +199,19 @@ FieldGroup lifecycle mirrors DocumentTypeField:
 
 ## Extraction Payload to LLM (vw-llm-app)
 
-**Extended `doc_type` dict passed to `_extract()`**:
+**Extended `doc_type` dict passed to `_extract()`** — single nested `fields` list:
 ```json
 {
   "name": "...",
   "description": "...",
   "instructions": "...",
-  "fields": [...],
-  "groups": [
+  "fields": [
+    {"codename": "invoice_number", "name": "Invoice Number", "type": "string", "required": true},
     {
       "codename": "invoice_lines",
       "name": "Invoice Lines",
+      "type": "repeatable_group",
       "description": "Table of line items. May span multiple rows.",
-      "kind": "repeatable",
       "min_items": 0,
       "max_items": 200,
       "fields": [
@@ -224,17 +222,20 @@ FieldGroup lifecycle mirrors DocumentTypeField:
 }
 ```
 
-**Updated `_ExtractionResult` Pydantic model**:
+**Updated `_ExtractionResult` Pydantic model** — single recursive `fields` key:
 ```python
-class _GroupItem(BaseModel):
-    # keys = field codenames, values = extracted values
-    __root__: dict[str, Any]
+class _FieldValue(BaseModel):
+    value: Any = None
 
-class _GroupResult(BaseModel):
-    items: list[_GroupItem] | None = None   # repeatable
-    fields: _GroupItem | None = None        # single_object
+class _GroupItem(BaseModel):
+    fields: dict[str, Any]  # field_codename → extracted value
+
+class _RepeatableGroupResult(BaseModel):
+    items: list[_GroupItem] | None = None
+
+class _SingleObjectGroupResult(BaseModel):
+    fields: _GroupItem | None = None  # None if optional and not found
 
 class _ExtractionResult(BaseModel):
-    header: dict[str, Any]          # field_codename → value
-    groups: dict[str, _GroupResult]  # group_codename → result
+    fields: dict[str, Any]  # recursive: top-level codename → value or nested group result
 ```

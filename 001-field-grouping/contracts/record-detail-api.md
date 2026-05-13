@@ -12,8 +12,7 @@
 | Field | Before | After |
 |-------|--------|-------|
 | `field_values` | `ExtractedFieldValue[]` | **Removed** |
-| `header` | — | `ExtractedFieldValue[]` (header-level fields only) |
-| `groups` | — | `Record<string, GroupResult>` keyed by group codename |
+| `fields` | — | Unified polymorphic list: top-level value fields + group entries |
 
 ---
 
@@ -33,21 +32,30 @@ export interface ExtractedFieldValue {
   display_order: number;
 }
 
-// New
-export type GroupKind = 'repeatable' | 'single_object';
-
-export interface GroupResult {
-  name: string;
-  kind: GroupKind;
-  optional: boolean;
-  min_items: number | null;   // repeatable only
-  max_items: number | null;   // repeatable only
-  items: ExtractedFieldValue[][] | null;   // repeatable: array of items, each item is array of fields
-  fields: ExtractedFieldValue[] | null;    // single_object: flat array; null if not_found
-  not_found: boolean;                      // true when optional single_object absent
+// New — group entry shapes (field_type discriminates)
+export interface RepeatableGroupEntry {
+  field_codename: string;
+  field_name: string;
+  field_type: 'repeatable_group';
+  description: string;
+  min_items: number;
+  max_items: number;
+  items: ExtractedFieldValue[][] | null;  // one inner array per extracted item
 }
 
-// Modified — field_values removed
+export interface SingleObjectGroupEntry {
+  field_codename: string;
+  field_name: string;
+  field_type: 'single_object_group';
+  description: string;
+  optional: boolean;
+  fields: ExtractedFieldValue[] | null;  // null when optional and not found
+  not_found: boolean;
+}
+
+export type FieldsListEntry = ExtractedFieldValue | RepeatableGroupEntry | SingleObjectGroupEntry;
+
+// Modified — field_values removed, unified fields list added
 export interface ExtractionRecordDetail {
   id: string;
   document_type: { id: string; name: string };
@@ -68,8 +76,7 @@ export interface ExtractionRecordDetail {
   failed_attachment_names: string[];
   trace_id: string;
   // NEW SHAPE — replaces field_values
-  header: ExtractedFieldValue[];
-  groups: Record<string, GroupResult>;
+  fields: FieldsListEntry[];
 }
 ```
 
@@ -81,50 +88,31 @@ export interface ExtractionRecordDetail {
 # ExtractionRecordDetailSerializer output shape
 {
     # ... all existing meta fields unchanged ...
-    "header": [ExtractedFieldValueSerializer],          # group=NULL
-    "groups": {
-        "<codename>": {
-            "name": str,
-            "kind": "repeatable" | "single_object",
-            "optional": bool,
-            "min_items": int | None,
-            "max_items": int | None,
+    "fields": [
+        # top-level value fields (field_type != group variant)
+        ExtractedFieldValueSerializer,
+        # ...
+        # repeatable group entry
+        {
+            "field_codename": str,
+            "field_name": str,
+            "field_type": "repeatable_group",
+            "description": str,
+            "min_items": int,
+            "max_items": int,
             "items": [[ExtractedFieldValueSerializer]] | None,
+        },
+        # single object group entry
+        {
+            "field_codename": str,
+            "field_name": str,
+            "field_type": "single_object_group",
+            "description": str,
+            "optional": bool,
             "fields": [ExtractedFieldValueSerializer] | None,
             "not_found": bool,
-        }
-    }
-}
-```
-
----
-
-## Group Management Endpoints (new)
-
-**Nested under document types:**
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/document-entries/document-types/{id}/groups/` | List groups for a document type |
-| `POST` | `/document-entries/document-types/{id}/groups/` | Create a group |
-| `PATCH` | `/document-entries/document-types/{id}/groups/{group_id}/` | Update group (name, description, limits; codename immutable if active) |
-| `DELETE` | `/document-entries/document-types/{id}/groups/{group_id}/` | Delete group (blocked if document type is active) |
-| `POST` | `/document-entries/document-types/{id}/groups/{group_id}/fields/` | Move a field into this group |
-| `DELETE` | `/document-entries/document-types/{id}/groups/{group_id}/fields/{field_id}/` | Move field back to header level (blocked if document type is active) |
-
-**Group serializer shape:**
-```json
-{
-  "id": "uuid",
-  "codename": "invoice_lines",
-  "name": "Invoice Lines",
-  "description": "...",
-  "kind": "repeatable",
-  "optional": false,
-  "min_items": 0,
-  "max_items": 200,
-  "display_order": 0,
-  "fields": [{ "id": "...", "codename": "...", "name": "...", "display_order": 0 }]
+        },
+    ]
 }
 ```
 
@@ -134,9 +122,9 @@ export interface ExtractionRecordDetail {
 
 Before deploy, verify all consumers updated:
 
-- [ ] `ExtractionRecordDetailSerializer` — `field_values` removed, `header` + `groups` added
+- [ ] `ExtractionRecordDetailSerializer` — `field_values` removed, unified `fields` list added
 - [ ] `ExtractionRecordDetail` TypeScript type updated
-- [ ] `ExtractionRecordDetailPage.tsx` — renders `header` + `groups` instead of `field_values`
-- [ ] `DocumentEntryRenderer.tsx` — renders `header` + `groups` read-only
+- [ ] `ExtractionRecordDetailPage.tsx` — renders unified `fields` list (value fields + group entries)
+- [ ] `DocumentEntryRenderer.tsx` — renders unified `fields` list read-only
 - [ ] All Django API tests referencing `field_values` updated
 - [ ] Release notes drafted

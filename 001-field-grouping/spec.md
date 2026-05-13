@@ -32,7 +32,7 @@ A user building a Document Type for structured documents (e.g. pickup-code manif
 2. **Given** I have created a Repeatable group, **When** I configure it, **Then** I can set a minimum and maximum number of items.
 3. **Given** I have created a Single object group, **When** I configure it, **Then** I can mark it as optional.
 4. **Given** I have existing header-level fields, **When** I select one, **Then** I can move it into a group; and vice versa — I can move a group field back to header level.
-5. **Given** a Document Type has fields across header and groups, **When** I count them, **Then** the total cannot exceed 50 fields and 10 groups.
+5. **Given** a Document Type has fields across header and groups, **When** I count them, **Then** the total cannot exceed 50 fields tree-wide (top-level + all group children).
 6. **Given** I have a field in any context, **When** I view the field form, **Then** the description input is always visible (not collapsed).
 7. **Given** a Document Type is active, **When** I try to rename a group code, delete a group, or remove a field from a group, **Then** the system prevents the action — same immutability rules as fields today.
 
@@ -107,7 +107,7 @@ A user reviewing historical processing of a document needs to see the same group
 - What happens when a document spans multiple pages and the same group appears on each page (bilingual)? → Fixture-covered by the Kombiverkehr test case; extraction must deduplicate or unify correctly.
 - What happens when extracted items exceed the configured maximum? → Extra items are dropped.
 - What happens when extraction encounters a structural error for a specific group (malformed model response, timeout, unmappable data)? → The group is treated as zero items / not found; the standard empty state is shown to the reviewer; the error is logged internally for observability.
-- What happens when a Document Type reaches the 50-field or 10-group limit? → The UI disables adding more fields/groups and shows an informative message.
+- What happens when a Document Type reaches the 50-field tree-wide limit? → The UI disables adding more fields/groups and shows an informative message.
 - What happens when a user tries to delete a group from an active Document Type? → Action is blocked with a clear error message citing the immutability rule.
 
 ---
@@ -128,11 +128,10 @@ A user reviewing historical processing of a document needs to see the same group
 - **FR-008**: Fields within a group are individually optional — the model fills what the document provides per item.
 - **FR-009**: The field description input MUST always be visible during authoring (never collapsed or hidden).
 - **FR-010**: The wizard MUST display authoring guidance text covering: disambiguation of same-concept fields at different levels, structural variability (table vs. inline text), and when to use repeatable vs. separate Document Types.
-- **FR-011**: Total fields across header and all groups MUST NOT exceed 50 per Document Type.
-- **FR-012**: Total groups per Document Type MUST NOT exceed 10.
-- **FR-013**: Maximum items per repeatable group MUST NOT exceed 200.
+- **FR-011**: Total fields tree-wide (top-level + all group children) MUST NOT exceed 50 per Document Type.
+- **FR-012**: Maximum items per repeatable group MUST NOT exceed 200.
 - **FR-014**: Once a Document Type is active, group codes MUST NOT be changeable, groups MUST NOT be deletable, and fields inside groups MUST NOT be removable.
-- **FR-014a**: Group codes MUST be unique within a given Document Type; duplicate codes within the same Document Type MUST be rejected at save time.
+- **FR-013**: Group field codenames MUST be unique within a given Document Type; duplicates MUST be rejected at save time.
 
 **Extraction**
 
@@ -159,7 +158,7 @@ A user reviewing historical processing of a document needs to see the same group
 
 **API Contract**
 
-- **FR-029**: The record detail endpoint's flat field-value list MUST be replaced by a structured response with `header` and `groups` sections — hard cutover, no versioned endpoint.
+- **FR-029**: The record detail endpoint's flat `field_values` list MUST be replaced by a unified `fields` list (polymorphic by `field_type`) — hard cutover, no versioned endpoint.
 - **FR-030**: All in-product consumers (UI, internal tooling, API tests) MUST be fully migrated to the new shape before deploy; the deploy is a single coordinated release.
 - **FR-031**: Release notes MUST call out this as a breaking change for external consumers of the record detail endpoint.
 
@@ -167,8 +166,8 @@ A user reviewing historical processing of a document needs to see the same group
 
 - **Group**: Belongs to a Document Type. Attributes: name, code (immutable once active; unique within the Document Type), description, kind (Repeatable | Single object), optional (Single object only), min_items / max_items (Repeatable only). A group contains an ordered list of Fields.
 - **Field**: Belongs to either header level or exactly one Group within a Document Type. Attributes: name, code, description, type (string / number / date / enum / currency / boolean), optional flag.
-- **Document Type**: Top-level entity. Contains header-level Fields and Groups. Limits: 50 total fields, 10 groups.
-- **Extraction Result**: Structured output with `header` (key-value map) and `groups` (map of group code → array of items for Repeatable, or single object for Single object).
+- **Document Type**: Top-level entity. Contains top-level Fields and Group fields (each group field's children are its member fields). Limit: 50 fields tree-wide.
+- **Extraction Result**: Structured output with a single nested `fields` key — top-level value fields and group entries (repeatable_group / single_object_group) in one unified list.
 - **Record**: A processed document instance. Links to a Document Type and stores the Extraction Result.
 
 ---
