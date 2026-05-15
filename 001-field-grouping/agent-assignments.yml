@@ -1,0 +1,119 @@
+# Agent Assignments
+# Feature: Document Type Field Grouping (VWE-1496)
+# Generated: 2026-05-13
+# Command: /speckit-agent-assign-assign
+
+agents_scanned:
+  - name: "django-developer"
+    source: "user"
+    description: "Use when building Django 4+ web applications, REST APIs, or modernizing existing Django projects with async views and enterprise patterns."
+  - name: "react-specialist"
+    source: "user"
+    description: "Use when optimizing existing React applications for performance, implementing advanced React 18+ features, or solving complex state management and architectural challenges within React codebases."
+  - name: "typescript-pro"
+    source: "user"
+    description: "Use when implementing TypeScript code requiring advanced type system patterns, complex generics, type-level programming, or end-to-end type safety across full-stack applications."
+  - name: "ai-engineer"
+    source: "user"
+    description: "Use this agent when architecting, implementing, or optimizing end-to-end AI systems—from model selection and training pipelines to production deployment and monitoring."
+  - name: "prompt-engineer"
+    source: "user"
+    description: "Use this agent when you need to design, optimize, test, or evaluate prompts for large language models in production systems."
+
+assignments:
+  T001:
+    agent: "django-developer"
+    reason: "Reading Django ORM model baseline context before making changes"
+  T002:
+    agent: "typescript-pro"
+    reason: "Reading TypeScript type definitions baseline before extending discriminated unions"
+  T003:
+    agent: "django-developer"
+    reason: "Django model extension — adding nullable self-FK to DocumentTypeField"
+  T004:
+    agent: "django-developer"
+    reason: "Django model extension — adding nullable group_item_index to ExtractedFieldValue"
+  T005:
+    agent: "django-developer"
+    reason: "Pydantic discriminated union extension within Django model file"
+  T006:
+    agent: "django-developer"
+    reason: "Django migration authoring — backward-safe nullable columns"
+  T007:
+    agent: "typescript-pro"
+    reason: "Advanced TypeScript discriminated union types (RepeatableGroupEntry, SingleObjectGroupEntry, FieldsListEntry) and interface updates"
+  T008:
+    agent: "django-developer"
+    reason: "Django factory-boy trait additions for group fields and ExtractedFieldValue"
+  T009:
+    agent: "django-developer"
+    reason: "DRF serializer with nested tree validation — depth-2, codename uniqueness, 50-field limit, group config rules"
+  T010:
+    agent: "django-developer"
+    reason: "DRF serializer — atomic nested tree reconciliation, re-parenting, active-type immutability"
+  T011:
+    agent: "django-developer"
+    reason: "Django ViewSet — wrapping create/update in atomic transaction"
+  T012:
+    agent: "react-specialist"
+    reason: "React 18 component update — group field containers, hello-pangea/dnd nested rendering"
+  T013:
+    agent: "react-specialist"
+    reason: "Mantine form components — group creation form with conditional fields per group kind"
+  T014:
+    agent: "react-specialist"
+    reason: "Advanced drag-and-drop logic — moving value fields in/out of group containers with depth enforcement"
+  T015:
+    agent: "react-specialist"
+    reason: "React conditional UI — 50-field limit guard, active-type immutability controls"
+  T016:
+    agent: "react-specialist"
+    reason: "Mantine Alert component — collapsible authoring guidance text"
+  T017:
+    agent: "ai-engineer"
+    reason: "Recursive Pydantic model design for LLM extraction result — _ExtractionResult with nested group variants"
+  T018:
+    agent: "ai-engineer"
+    reason: "LLM extraction pipeline integration — updating _extract() call with unified nested doc_type fields"
+  T019:
+    agent: "prompt-engineer"
+    reason: "Extraction prompt template redesign — rendering nested field structure inline for LLM"
+  T020:
+    agent: "ai-engineer"
+    reason: "LLM result write-back — recursive tree walk, padding, capping, group_item_index assignment, null-value rows"
+  T021:
+    agent: "ai-engineer"
+    reason: "LLM extraction quality gate — running and evaluating five real-world fixture documents"
+  T022:
+    agent: "django-developer"
+    reason: "DRF serializer — ExtractionRecordDetailSerializer polymorphic unified fields list output"
+  T023:
+    agent: "react-specialist"
+    reason: "New React component — GroupCard with Mantine Card, confidence chip, FieldRow, not_found state"
+  T024:
+    agent: "react-specialist"
+    reason: "New React component — RepeatableGroupSection Mantine Accordion with warning badges, ConfidenceBar"
+  T025:
+    agent: "react-specialist"
+    reason: "React page update — ExtractionRecordDetailPage unified fields list render with GroupCard and RepeatableGroupSection"
+  T026:
+    agent: "react-specialist"
+    reason: "React read-only renderer — DocumentEntryRenderer unified fields list, all items collapsed by default"
+  T027:
+    agent: "django-developer"
+    reason: "pytest suite — Django model/serializer tests for tree validation, immutability, CASCADE, limits"
+  T028:
+    agent: "django-developer"
+    reason: "pytest suite — record detail endpoint tests including django_assert_num_queries for SC-003"
+  T029:
+    agent: "react-specialist"
+    reason: "Vitest component tests — GroupCard not_found state, read-only mode, child rows"
+  T030:
+    agent: "react-specialist"
+    reason: "Vitest component tests — RepeatableGroupSection item count, warning badges, collapsed state"
+  T031:
+    agent: "react-specialist"
+    reason: "Vitest page-level tests — ExtractionRecordDetailPage unified fields render, no field_values"
+  T032:
+    agent: "default"
+    reason: "Manual checklist verification — no code production; human review of migration checklist items"
