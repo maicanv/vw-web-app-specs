@@ -135,7 +135,7 @@ A user reviewing historical processing of a document needs to see the same group
 
 **Extraction**
 
-- **FR-015**: The extraction model MUST receive a single unified nested `fields` list — group entries include their children inline via a nested `fields` array, discriminated by `type` (e.g. `repeatable_group`, `single_object_group`). No separate sections key.
+- **FR-015**: The extraction model MUST receive a single unified nested `fields` list — group entries include their children inline via a nested `fields` array, discriminated by `type` (e.g. `repeatable_group`, `single_object_group`). No separate sections key. *(Outbound payload implemented: `backend/django/apps/document_entries/llm_payload.py` — `DocumentTypeFieldPayload.from_orm()`. Remaining work is the vw-llm-app response side: parsing the grouped LLM result and writing `ExtractedFieldValue` rows with `group_item_index` — see T017–T020.)*
 - **FR-016**: The extraction result for a repeatable group MUST be an array — one item per occurrence found in the document.
 - **FR-017**: The extraction result for a single object group MUST be exactly one nested object, or absent if the group is optional and not found.
 - **FR-018**: Unknown or extra items in extraction results MUST be dropped.

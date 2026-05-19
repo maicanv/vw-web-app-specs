@@ -34,8 +34,8 @@ description: "Task list for Document Type Field Grouping (VWE-1496)"
 
 **Purpose**: Verify brownfield context and confirm baseline before any changes
 
-- [ ] T001 Confirm `backend/django/apps/document_entries/models.py` baseline — read DocumentTypeField, ExtractedFieldValue, and existing FieldConfig discriminated union to understand current structure
-- [ ] T002 [P] Confirm `client/src/types/documentEntry.ts` baseline — read existing ExtractedFieldValue and ExtractionRecordDetail types to understand current shape
+- [X] T001 Confirm `backend/django/apps/document_entries/models.py` baseline — read DocumentTypeField, ExtractedFieldValue, and existing FieldConfig discriminated union to understand current structure
+- [X] T002 [P] Confirm `client/src/types/documentEntry.ts` baseline — read existing ExtractedFieldValue and ExtractionRecordDetail types to understand current shape
 
 ---
 
@@ -45,14 +45,14 @@ description: "Task list for Document Type Field Grouping (VWE-1496)"
 
 **⚠️ CRITICAL**: All user story phases depend on T003–T008 being complete
 
-- [ ] T003 Add `parent_field` nullable self-FK (CASCADE, `related_name="children"`) to `DocumentTypeField` in `backend/django/apps/document_entries/models.py`
-- [ ] T004 Add `group_item_index` nullable IntegerField to `ExtractedFieldValue` in `backend/django/apps/document_entries/models.py`
-- [ ] T005 Add `RepeatableGroupConfig` (description, min_items, max_items) and `SingleObjectGroupConfig` (description, optional) variants to the `FieldConfig` discriminated union in `backend/django/apps/document_entries/models.py`
-- [ ] T006 Create migration `backend/django/apps/document_entries/migrations/000N_add_field_grouping.py` — single migration adding `parent_field` self-FK on `DocumentTypeField` and `group_item_index` on `ExtractedFieldValue` (both nullable, backward-safe)
-- [ ] T007 [P] Update `FieldConfig` TypeScript discriminated union in `client/src/types/documentEntry.ts` — add `RepeatableGroupConfig` and `SingleObjectGroupConfig` variants; add optional `fields: DocumentTypeField[]` to `DocumentTypeField`; add `RepeatableGroupEntry`, `SingleObjectGroupEntry`, `FieldsListEntry` union type; update `ExtractionRecordDetail` to replace `field_values` with `fields: FieldsListEntry[]` (see `contracts/record-detail-api.md` for exact shapes)
-- [ ] T008 [P] Add group field factory traits in `backend/django/apps/document_entries/factories.py` — `DocumentTypeFieldFactory` traits for `repeatable_group` and `single_object_group` config; child field trait with `parent_field` set; `ExtractedFieldValue` trait with `group_item_index`
+- [X] T003 Add `parent_field` nullable self-FK (CASCADE, `related_name="children"`) to `DocumentTypeField` in `backend/django/apps/document_entries/models.py`
+- [X] T004 Add `group_item_index` nullable IntegerField to `ExtractedFieldValue` in `backend/django/apps/document_entries/models.py`
+- [X] T005 Add `RepeatableGroupConfig` (description, min_items, max_items) and `SingleObjectGroupConfig` (description, optional) variants to the `FieldConfig` discriminated union in `backend/django/apps/document_entries/models.py`
+- [X] T006 Create migration `backend/django/apps/document_entries/migrations/0007_documenttypefield_parent_field_and_more.py` — single migration adding `parent_field` self-FK on `DocumentTypeField` and `group_item_index` on `ExtractedFieldValue` (both nullable, backward-safe)
+- [X] T007 [P] Update `FieldConfig` TypeScript discriminated union in `client/src/types/documentEntry.ts` — add `RepeatableGroupConfig` and `SingleObjectGroupConfig` variants; add optional `fields: DocumentTypeField[]` to `DocumentTypeField`; add `RepeatableGroupEntry`, `SingleObjectGroupEntry`, `FieldsListEntry` union type; update `ExtractionRecordDetail` to replace `field_values` with `fields: FieldsListEntry[]` (see `contracts/record-detail-api.md` for exact shapes)
+- [X] T008 [P] Add group field factory traits in `backend/django/apps/document_entries/factories.py` — `DocumentTypeFieldFactory` traits for `repeatable_group` and `single_object_group` config; child field trait with `parent_field` set; `ExtractedFieldValue` trait with `group_item_index`
 
-**Checkpoint**: Migration applied, model extended, FieldConfig union has group variants, TypeScript types updated — user story work can now begin
+**Checkpoint**: ✅ Migration applied, model extended, FieldConfig union has group variants, TypeScript types updated — user story work can now begin
 
 ---
 
@@ -66,19 +66,19 @@ description: "Task list for Document Type Field Grouping (VWE-1496)"
 
 ### Backend — Serializer & View
 
-- [ ] T009 [US1] Update `DocumentTypeFieldSerializer` in `backend/django/apps/document_entries/serializers.py` — accept nested `fields` array for group entries; validate: (a) field with non-null parent must use a value-type config (no groups-in-groups), (b) codename uniqueness across the whole tree per DocumentType, (c) 50-field tree-wide limit, (d) `max_items >= min_items` and `max_items <= 200` for repeatable groups; depth-2 rule enforced here
-- [ ] T010 [US1] Update `DocumentTypeUpdateSerializer` in `backend/django/apps/document_entries/serializers.py` — reconcile the nested field tree atomically: match existing fields by `id`, create new ones without `id`, delete absent ones (blocked with 400 if DocumentType is active), re-parent fields by tree position; group field codename and `parent_field` are read-only when DocumentType is active (extend existing active-type immutability block)
-- [ ] T011 [US1] Update `document_type_view_set.py` in `backend/django/apps/document_entries/document_type_view_set.py` — ensure create and update operations wrap the nested tree reconciliation in an atomic transaction; no new route needed (groups are fields)
+- [X] T009 [US1] Update `DocumentTypeFieldSerializer` in `backend/django/apps/document_entries/serializers.py` — accept nested `fields` array for group entries; validate: (a) field with non-null parent must use a value-type config (no groups-in-groups), (b) codename uniqueness across the whole tree per DocumentType, (c) 50-field tree-wide limit, (d) `max_items >= min_items` and `max_items <= 200` for repeatable groups; depth-2 rule enforced here
+- [X] T010 [US1] Update `DocumentTypeUpdateSerializer` in `backend/django/apps/document_entries/serializers.py` — reconcile the nested field tree atomically: match existing fields by `id`, create new ones without `id`, delete absent ones (blocked with 400 if DocumentType is active), re-parent fields by tree position; group field codename and `parent_field` are read-only when DocumentType is active (extend existing active-type immutability block)
+- [X] T011 [US1] Update `document_type_view_set.py` in `backend/django/apps/document_entries/document_type_view_set.py` — ensure create and update operations wrap the nested tree reconciliation in an atomic transaction; no new route needed (groups are fields)
 
 ### Frontend — FieldsStep
 
-- [ ] T012 [US1] Update `FieldsStep.tsx` in `client/src/app/documentEntry/documentTypes/steps/FieldsStep.tsx` — add "Add Repeatable Group" and "Add Single Object Group" options to the field creation menu; group fields render as collapsible containers with their children as nested `FieldRow` entries; value fields inside a group use existing `FieldRow` component
-- [ ] T013 [US1] Update `FieldsStep.tsx` group creation form — collect: name, codename, description, and (for repeatable) min_items / max_items; (for single object) optional flag; description input MUST render unconditionally (not behind a disclosure/toggle) — satisfies FR-009; confirm same is true for existing flat field forms
-- [ ] T014 [US1] Update `FieldsStep.tsx` drag-drop behaviour — moving a value field into or out of a group container updates `parent_field`; moving a group into another group is blocked client-side (depth ≤ 2) with a tooltip error; uses existing `@hello-pangea/dnd` setup
-- [ ] T015 [US1] Update `FieldsStep.tsx` limits and immutability — "Add Field" and "Add child field" buttons disabled when 50-field tree-wide total is reached; group edit/delete controls show inline error when DocumentType is active; reuses existing active-type guard pattern
-- [ ] T016 [US1] Add authoring guidance text (FR-010) to `FieldsStep.tsx` — collapsible Mantine `Alert` above the field list, shown by default; content: disambiguation of same-concept fields at different levels, structural variability (table vs. inline), when to use repeatable vs. separate Document Types
+- [X] T012 [US1] Update `FieldsStep.tsx` in `client/src/app/documentEntry/documentTypes/steps/FieldsStep.tsx` — add "Add Repeatable Group" and "Add Single Object Group" options to the field creation menu; group fields render as collapsible containers with their children as flat `Draggable` rows with left-border indent; value fields inside a group use `FieldRowContent` component
+- [X] T013 [US1] Update `FieldEditor.tsx` group authoring form — collect: name, codename, description, and (for repeatable) min_items / max_items; (for single object) optional flag; description input renders unconditionally — satisfies FR-009; same is true for flat field forms
+- [X] T014 [US1] Update `FieldsStep.tsx` drag-drop behaviour — flat-list single `Droppable` architecture; moving a value field into or out of a group updates `parent_field`; moving a group into another group is blocked (groups cannot be dropped into children); parent inference from the item above the insertion point
+- [X] T015 [US1] Update `FieldsStep.tsx` limits and immutability — "Add" and "Add field" (inside group) buttons disabled at `MAX_FIELDS_PER_DOCUMENT_TYPE` tree-wide total; group edit/delete controls hidden when DocumentType is active (`isActive` guard); reuses existing active-type guard pattern
+- [X] T016 [US1] Add authoring guidance text (FR-010) to `FieldsStep.tsx` — collapsible `StepHint` above the field list, shown by default; content: disambiguation of repeatable vs. single object groups, same-concept fields at different levels
 
-**Checkpoint**: US1 fully functional — Document Types with nested group fields can be created and updated; immutability and limits enforced
+**Checkpoint**: ✅ US1 fully functional — Document Types with nested group fields can be created and updated via wizard and API; immutability and limits enforced; 65 new backend tests pass
 
 ---
 
@@ -92,7 +92,7 @@ description: "Task list for Document Type Field Grouping (VWE-1496)"
 
 ### vw-llm-app
 
-- [ ] T017 [US2] Replace flat `_ExtractionResult` Pydantic model with recursive model in `vw-llm-app/actions/document_entry_side_effect_handler.py` — add `_FieldValue`, `_GroupItem`, `_RepeatableGroupResult`, `_SingleObjectGroupResult`, and updated `_ExtractionResult` with a single `fields: dict[str, Any]` key (see §4.2 of `technical_proposals/tp_vwe1496_field_grouping.md` for exact model definitions); confirm Pydantic major version and use correct recursion syntax (v1: `update_forward_refs()`, v2: `model_rebuild()`)
+- [ ] T017 [US2] Update `vw-llm-app/actions/document_entry_side_effect_handler.py` response parsing — **NOTE: outbound payload (Django → LLM) is already done via `llm_payload.py:DocumentTypeFieldPayload`. This task covers only the inbound side**: replace flat `_ExtractionResult` Pydantic model with recursive model — add `_FieldValue`, `_GroupItem`, `_RepeatableGroupResult`, `_SingleObjectGroupResult`, and updated `_ExtractionResult` with a single `fields: dict[str, Any]` key (see §4.2 of `technical_proposals/tp_vwe1496_field_grouping.md` for exact model definitions); confirm Pydantic major version and use correct recursion syntax (v1: `update_forward_refs()`, v2: `model_rebuild()`)
 - [ ] T018 [US2] Update `_extract()` call in `vw-llm-app/actions/document_entry_side_effect_handler.py` — pass unified nested `doc_type["fields"]` list (group entries carry their children inline with `type`, `description`, and `fields` keys) instead of separate header fields and groups sections; match shape in §4.1 of TP
 - [ ] T019 [US2] Update extraction prompt template in `vw-llm-app/prompts/templates.py` — render nested `fields` inline (not two separate sections); instruct model to return repeatable groups as `items` arrays and single object groups as nested `fields` dicts (or omit if optional and absent)
 - [ ] T020 [US2] Update side effect handler write-back loop in `vw-llm-app/actions/document_entry_side_effect_handler.py` — walk the DocumentType field tree recursively: (a) top-level value fields: one `ExtractedFieldValue` per codename, `group_item_index=NULL`; (b) repeatable group: for each item at index `i`, one row per child field with `group_item_index=i`; pad to `min_items` with empty rows; cap at `max_items`; (c) single object group: one row per child field with `group_item_index=NULL`; if optional and absent, write no rows; (d) child field absent from LLM response for an item: write one `ExtractedFieldValue` row with `raw_value=None, display_value=None` (best-effort — do not skip the row, as the record detail serializer iterates the schema tree to build the response); (e) unknown codenames at any level: drop and append to `needs_review_reason`; (f) structural errors on a subtree: treat as absent, log to Sentry, append to `needs_review_reason`, continue for remaining fields
@@ -153,7 +153,7 @@ description: "Task list for Document Type Field Grouping (VWE-1496)"
 
 **Purpose**: Tests, quality gate verification, migration checklist, and release prep
 
-- [ ] T027 [P] Add Django model + serializer tests in `backend/django/tests/test_apps/test_document_entries/test_document_type_viewset.py` — cover: codename uniqueness tree-wide; 50-field tree-wide limit; depth-2 enforcement (group inside group rejected); CASCADE deletes children when parent deleted (draft only); active-type immutability (codename read-only, `parent_field` read-only, delete blocked, re-parent blocked); repeatable group config validation (`max_items >= min_items`, `max_items <= 200`); nested reconciliation atomicity (any validation failure rejects entire PATCH)
+- [X] T027 [P] Add Django model + serializer tests in `backend/django/tests/test_apps/test_document_entries/test_document_type_viewset.py` — cover: codename uniqueness tree-wide; 50-field tree-wide limit; depth-2 enforcement (group inside group rejected); CASCADE deletes children when parent deleted (draft only); active-type immutability (codename read-only, `parent_field` read-only, delete blocked, re-parent blocked); repeatable group config validation (`max_items >= min_items`, `max_items <= 200`); nested reconciliation atomicity (any validation failure rejects entire PATCH) — **65 test functions added**
 - [ ] T028 [P] Add Django record detail tests in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py` — cover: unified `fields` list shape; repeatable group items ordered by `group_item_index`; `not_found: true` for absent optional single object; `items: []` for repeatable with no extracted rows; flat-only records produce no group entries; `field_values` key absent from all responses; include a `django_assert_num_queries` assertion to verify the record detail endpoint issues at most 1 `ExtractedFieldValue` query regardless of group count (SC-003 load parity)
 - [ ] T029 [P] Add Vitest component tests for `GroupCard.tsx` — renders child rows; `not_found` empty state; edit affordances absent in read-only mode
 - [ ] T030 [P] Add Vitest component tests for `RepeatableGroupSection.tsx` — item count in section header; first item expanded by default; warning badge on items with low confidence; all collapsed in read-only mode; empty state when no items
