@@ -80,7 +80,7 @@ client/src/types/documentEntry.ts       Shared TypeScript types
 - [x] T011 [US1] Implement `perform_destroy` in `OutputRouteViewSet`: delete `api_endpoint` first (bypasses PROTECT), then route; preserve `DeliveryAttempt` rows (FK already SET_NULL)
 - [x] T012 [US1] Register nested routes under DocumentType in `backend/django/apps/document_entries/urls.py` (or the app router) — pattern: `/document-types/{document_type_pk}/output-routes/` and `/{pk}/`
 - [x] T013 [P] [US1] Write tests for output route CRUD (create with inline endpoint, list, patch, delete with endpoint cleanup, permission gate, blocked-connection validation) in `backend/django/tests/test_apps/test_document_entries/test_output_route_viewset.py`
-- [ ] T013b [P] [US1] Add test verifying `body_template == "{{content}}"` on the `ApiEndpoint` after `OutputRoute` creation (after T010b fix) in the same file
+- [x] T013b [P] [US1] Add test verifying `body_template == "{{content}}"` on the `ApiEndpoint` after `OutputRoute` creation (after T010b fix) in the same file
 
 ### Frontend — Wizard Output Step
 
