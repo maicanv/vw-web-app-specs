@@ -5,6 +5,26 @@
 
 ---
 
+## TP VWE-1521 Deviations
+
+The original plan was built without referencing TP VWE-1521. This section documents where the Phase 1 implementation diverges from TP, and the disposition for each divergence.
+
+| # | TP Design | Implementation | Disposition |
+|---|-----------|----------------|-------------|
+| **DEV-1** | `RouteDelivery` (state tracker) + `DeliveryAttempt` (attempt log) — two models | Single `DeliveryAttempt` with snapshot fields (`route_label_snapshot`, `endpoint_url_snapshot`) | **Keep merged approach**. `delivery_status` is derived from latest attempt (D-007). Simpler, no extra migration, fully sufficient for v1 sync delivery. |
+| **DEV-2** | `api_endpoint` FK → ApiEndpoint, SET_NULL, nullable | `api_endpoint` OneToOneField → ApiEndpoint, PROTECT | **Keep OneToOneField**. One dedicated endpoint per route (spec FR-002). PROTECT + explicit cascade in `perform_destroy` achieves the same safety goal. |
+| **DEV-3** | `payload_config = SchemaField(schema=PayloadConfig)` Pydantic model | `value_transforms = JSONField(default=dict)` with inline shape | **Keep JSONField**. Functionally equivalent for v1 (no schema_version needed). Pydantic wrapper can be added non-breakingly later. |
+| **DEV-4** | `DeliveryMode.manual` | `DeliveryMode.requires_approval` | **Keep `requires_approval`**. Spec and UI copy use "Requires Approval"; spec overrides TP on user-facing terminology. |
+| **DEV-5** | `DeliveryAttempt.is_override` + `override=True` body param | Not implemented | **Keep omitted**. Spec FR-013 explicitly removes the override path in v1: "prevent_duplicates has no override path in v1." Spec overrides TP. |
+| **DEV-6** | `OutputRoute.display_order = IntegerField(default=0)` | Not implemented; routes ordered by `created_at, pk` | **Defer**. DnD reorder is a future enhancement. No impact on v1 behavior. |
+| **DEV-7** | `OutputRoute.payload_format` (json/xml stub) | Not implemented | **Defer**. Spec: "Payload format is JSON only in v1." Enum stub adds complexity with no v1 value. |
+| **DEV-8** | `body_template = "{{content}}"` set on endpoint creation | `body_template=None` in `perform_create` | **Fix in Phase 1 gap** (T010b). `TemporaryEndpointExecutor` (Phase 2) depends on this. No backfill needed — nothing is in production yet. One-line fix in `perform_create`. |
+| **DEV-9** | `WithSingleEndpointMixin` extracted to `api_integrations/mixins.py` | Fields inline on `OutputRoute` | **Defer**. No second consumer of this mixin in v1. Inline is clear and avoids premature abstraction. |
+| **DEV-10** | TP §3.1: manual send via `POST /route-deliveries/{id}/send/` (separate resource) | Plan uses `POST /records/{id}/deliver/` with `{"output_route_id": "..."}` body | **Keep existing plan approach**. Simpler — no additional state model or router registration needed. Same behavior. |
+| **DEV-11** | TP §3.1: preview is `POST /output-routes/preview/` at collection level — accepts unsaved route config | Implemented as `GET detail=True` on a saved route (`/output-routes/{id}/payload_preview/`) | **Keep v1 scope cut**. Unsaved-route preview deferred to v2. Create-dialog preview can only call this after first save. No behavior change for saved routes. |
+
+---
+
 ## Codebase Findings
 
 ### api_integrations App
@@ -24,8 +44,8 @@
 |------|---------|
 | `ExtractionRecord.status` | ExtractionRecordStatus enum; deliverable states = any status NOT IN {NEEDS_REVIEW, REJECTED, SKIPPED, FAILED} |
 | `ExtractionRecord.metadata` | JSONField, default=dict; currently stores `trace_id` here |
-| `ExtractedFieldValue` | Links to `DocumentTypeField` via FK; `group_item_index` (from VWE-1496) determines repeatable group position |
-| Record detail serializer | `ExtractionRecordDetailSerializer._build_fields_list()` already returns the nested grouped shape (VWE-1496) |
+| `ExtractedFieldValue` | Links to `DocumentTypeField` via FK; `group_item_index` (int, null for non-repeatable) determines repeatable group position |
+| Record detail serializer | `ExtractionRecordDetailSerializer._build_fields_list()` already returns the nested grouped shape |
 | No existing output route models | Confirmed — `OutputRoute` and `DeliveryAttempt` are net-new |
 
 ### DocumentEntryAction (ProviderAction)
@@ -46,7 +66,7 @@
 | Async DB access | `@async_db_operation` decorator on service methods using Django ORM |
 | Delivery trigger | Sync Django ORM call wrapping needed when called from async FastAPI context (`sync_to_async`) |
 
-### VWE-1496 Field Grouping Integration
+### Field Grouping Integration
 
 The payload builder must walk the `ExtractedFieldValue` rows using the `DocumentTypeField` tree:
 

@@ -9,7 +9,7 @@
 - Docker Compose running (`docker compose up -d` from `backend/`)
 - Frontend dependencies installed (`cd client && npm install`)
 - `backend/.env` configured (copy from `.env.example` if not done)
-- VWE-1496 Field Grouping deployed (prerequisite — `parent_field` and `group_item_index` columns must exist)
+- Field Grouping migrations applied — `parent_field` column on `DocumentTypeField` and `group_item_index` on `ExtractedFieldValue` must exist
 
 ## Run After Merging
 

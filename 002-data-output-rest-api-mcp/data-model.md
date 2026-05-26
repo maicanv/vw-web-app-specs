@@ -18,6 +18,7 @@
 | `document_type` | FK → DocumentType | CASCADE, `related_name="output_routes"` | |
 | `organisation` | FK → Organisation | CASCADE | Denorm for queryset filtering |
 | `api_endpoint` | OneToOneField → ApiEndpoint | PROTECT, `related_name="output_route"` | Route owns endpoint; viewset `perform_destroy` deletes endpoint first |
+| `api_connection` | FK → ApiConnection | SET_NULL, null=True, blank=True, `related_name="output_routes"` | From TP §2.1 — auth credentials for the endpoint; SET_NULL so route persists if connection is deleted |
 | `label` | CharField(255) | not null | Display name |
 | `delivery_mode` | CharField(50) | choices, not null | `"auto"` \| `"requires_approval"` |
 | `repeat_policy` | CharField(50) | choices, not null | `"allow_resend"` \| `"prevent_duplicates"` |
@@ -96,13 +97,13 @@ class DeliveryAttemptStatus(models.TextChoices):
 
 ## Migration
 
-**File**: `backend/django/apps/document_entries/migrations/000N_add_output_routes.py`
+**File**: `backend/django/apps/document_entries/migrations/0008_outputroute_deliveryattempt_and_more.py`
 
-Operations (in order):
+Status: **Already applied**. Both tables exist in the schema.
+
+Operations already in migration (in order):
 1. `CreateModel(OutputRoute)` — including all fields and indexes
 2. `CreateModel(DeliveryAttempt)` — including all fields and indexes
-
-Both tables are new; no existing columns are modified. Backward-safe (no data loss on rollback — drop tables).
 
 ---
 
@@ -116,7 +117,23 @@ Both tables are new; no existing columns are modified. Backward-safe (no data lo
 
 ---
 
-## TP VWE-1496 Constraints on PayloadBuilder
+## Phase 1 Gap: body_template
+
+`ApiEndpoint.body_template` is currently `None` for endpoints created via the output route flow.
+
+Per TP §4.1, it must be `"{{content}}"`. `TemporaryEndpointExecutor` renders this template via Jinja2 with `{"content": json.dumps(payload)}` to produce the final request body.
+
+**Fix**: Change `output_route_view_set.perform_create` line:
+```python
+body_template=None,        # ← current
+body_template="{{content}}",  # ← required
+```
+
+No backfill needed — nothing is in production yet. The fix is a one-line code change.
+
+---
+
+## PayloadBuilder Data Assembly Rules
 
 Copied from TP §2.3 for implementor reference — these constraints govern the `data` section assembly:
 

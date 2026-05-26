@@ -150,3 +150,33 @@ Returns the sample payload for the route's current transforms.
   }
 }
 ```
+
+---
+
+## Endpoint Test
+
+```
+POST /api/v1/document-entries/document-types/{document_type_id}/output-routes/{route_id}/test/
+```
+
+Per TP §3.3 — fires a live request to the route's endpoint with the current preview payload (no `DeliveryAttempt` written). Reuses `BaseConnectionService.test_endpoint()` for header redaction and execution.
+
+**Request body**: `{}` (optional `record_id` for real-data preview; omitted = mock data)
+
+**Response 200**:
+```json
+{
+  "status_code": 200,
+  "response_body": "truncated response snippet (≤ 500 chars)",
+  "timestamp": "2026-05-26T10:00:00Z"
+}
+```
+
+**Notes**:
+- Request headers (including secrets) are **never** in the response.
+- Failures (timeout, SSRF block, non-2xx) return `200` with the failure's `status_code` and error snippet — this endpoint reports what happened, it does not error out on a failed test.
+
+**Errors**:
+- `403`: Permission denied
+- `404`: Route not found in organisation
+- `422`: Connection not in CONNECTED status

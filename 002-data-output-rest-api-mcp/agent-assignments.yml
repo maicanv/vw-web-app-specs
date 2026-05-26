@@ -32,7 +32,7 @@ agents_scanned:
 assignments:
   T001:
     agent: "default"
-    reason: "Shell verification task — confirm TP VWE-1496 migration applied; no domain specialization needed"
+    reason: "Shell verification task — confirm field grouping migration applied; no domain specialization needed"
   T002:
     agent: "django-developer"
     reason: "Django TextChoices enum definitions in models.py"
@@ -89,7 +89,7 @@ assignments:
     reason: "Append OutputStep to existing wizard step array"
   T020:
     agent: "django-developer"
-    reason: "PayloadBuilder — complex DocumentTypeField tree walk per TP VWE-1496; value transforms; payload size guard"
+    reason: "PayloadBuilder — complex DocumentTypeField tree walk; value transforms; payload size guard"
   T021:
     agent: "qa-expert"
     reason: "PayloadBuilder unit tests — flat fields, groups, transforms, 1 MB boundary"

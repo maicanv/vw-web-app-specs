@@ -1,6 +1,15 @@
-# Implementation Plan: Data Output via REST API
+# Implementation Plan: Data Output via REST API (VWE-1521)
 
-**Branch**: `002-data-output-rest-api-mcp` | **Date**: 2026-05-26 | **Spec**: [spec.md](./spec.md)
+**Branch**: `VWE-1529-vwe-1521-task-group-1-foundation-route-crud-phases-1-3`
+**Date**: 2026-05-26
+**Spec**: [specs/002-data-output-rest-api-mcp/spec.md](./spec.md)
+**TP**: [technical_proposals/tp_vwe1521_output_route_payload_shaping.md](../../technical_proposals/tp_vwe1521_output_route_payload_shaping.md)
+**Input**: Feature specification from `/specs/002-data-output-rest-api-mcp/spec.md`
+
+> **Authoritative sources**: TP VWE-1521 is the primary technical source of truth.
+> Spec clarifications override TP on user-facing terminology and v1 scope (see research.md §Deviations).
+
+---
 
 ## Table of Contents
 
@@ -8,49 +17,48 @@
 - [Technical Context](#technical-context)
 - [Constitution Check](#constitution-check)
 - [Project Structure](#project-structure)
-- [Phase Overview](#phase-overview)
-- [Phase 1 — Data Model & Migrations](#phase-1--data-model--migrations)
-- [Phase 2 — Output Route API (Django)](#phase-2--output-route-api-django)
-- [Phase 3 — Delivery Orchestration (Django + FastAPI)](#phase-3--delivery-orchestration-django--fastapi)
-- [Phase 4 — Record Detail & History APIs](#phase-4--record-detail--history-apis)
-- [Phase 5 — Frontend: Document Type Wizard (Output Step)](#phase-5--frontend-document-type-wizard-output-step)
-- [Phase 6 — Frontend: Record Detail Delivery Section](#phase-6--frontend-record-detail-delivery-section)
-- [Phase 7 — Frontend: History Read-Only Delivery Section](#phase-7--frontend-history-read-only-delivery-section)
+- [Phase Status](#phase-status)
+- [Remaining Work](#remaining-work)
 - [Complexity Tracking](#complexity-tracking)
 
 ---
 
 ## Summary
 
-Route structured extraction results from Document Types to external REST endpoints by linking each Document Type to one or more output routes. Each route owns a dedicated `ApiEndpoint` (created inline, no reuse), assembles a `general / email / data` JSON payload using the grouped extraction shape from VWE-1496, applies per-field value transforms, and delivers via HTTP. Auto delivery fires on any transition to a deliverable `ExtractionRecord` status; manual approval and retry are exposed through dedicated record-level endpoints. A SSRF guard, a 1 MB payload cap, and a per-attempt delivery log are mandatory. The frontend adds an Output wizard step and a Delivery section to both the record detail page and the history read-only view.
+Users need to route extracted document data to external REST endpoints with payload shaping. The `OutputRoute` model links a `DocumentType` to an `ApiEndpoint`; `PayloadBuilder` assembles the `general / email / data` JSON envelope (TP §4.2); `TemporaryEndpointExecutor` (TP §4.1) dispatches the outbound request (SSRF-guarded, 1 MB cap, 30 s timeout); delivery state is **derived** from `DeliveryAttempt` rows — no separate state-machine model needed (D-007).
+
+**Phase 1** (model + route CRUD + wizard Output step) is **complete**. This plan covers Phases 2 and 3 and one Phase 1 gap:
+- **Phase 1 gap**: `body_template` is set to `None` in `perform_create` — must be `"{{content}}"` per TP §4.1 so the executor can inject the payload via Jinja.
+- **Phase 2**: `PayloadBuilder`, `TemporaryEndpointExecutor`, delivery orchestration (inline in FastAPI action + status-change hook), preview + test endpoints.
+- **Phase 3**: `DeliverySection` component, manual send/retry action on ExtractionRecord, record detail + history surfaces.
 
 ---
 
 ## Technical Context
 
-**Language/Version**: Python 3.12 (Django/FastAPI), TypeScript 5.x (React)
-**Primary Dependencies**: Django 4.2, DRF 3.17, FastAPI 0.136+, React 18, Mantine UI, TanStack Query v5, Vitest
-**Storage**: PostgreSQL (psycopg2); outbound HTTP via `httpx` (already used in the backbone)
-**Testing**: pytest (Django + FastAPI), Vitest + React Testing Library (frontend)
-**Target Platform**: Linux container (Docker Compose / GCP); local dev via Docker or Poetry venv
-**Project Type**: Web service (Django management API) + async backbone (FastAPI) + React SPA
-**Performance Goals**: Auto delivery within 30 s of status transition; outbound request timeout 30 s
-**Constraints**: Max outbound payload 1 MB; SSRF guard blocks private IPs/localhost/metadata; no automatic retries; secret headers never in logs
-**Scale/Scope**: Per-record, per-route delivery; O(N routes × records) delivery attempts; no bulk delivery in v1
+**Language/Version**: Python 3.12 (Django), TypeScript 5 (React)
+**Primary Dependencies**: Django 4.2, DRF, django-pydantic-field, FastAPI, Mantine UI, TanStack Query, Vitest
+**Storage**: PostgreSQL (via Django ORM)
+**Testing**: pytest (Django), Vitest + @testing-library/react (frontend)
+**Target Platform**: Linux server (Docker Compose), browser (React SPA)
+**Project Type**: Full-stack web service — Django REST API + React frontend
+**Performance Goals**: Auto-delivery within 30 s of record reaching deliverable status (FR, SC-002); synchronous v1
+**Constraints**: 1 MB payload cap; 30 s request timeout; SSRF guard on all outbound URLs; no raw payload content in logs
+**Scale/Scope**: Per-org; bounded by extraction record volume; single endpoint per route (OneToOneFK)
 
 ---
 
 ## Constitution Check
 
-| Principle | Assessment | Notes |
-|-----------|------------|-------|
-| I. Protect Sensitive Data | ✅ Pass | Payload hash only in logs; secret headers masked via existing `api_integrations` layer; SSRF guard prevents SSRF attacks |
-| II. Respect the Architecture | ✅ Pass | New models in `document_entries` app; reuses `api_integrations` connection/endpoint pattern; delivery follows existing `ProviderAction.execute()` hook points |
-| III. Test What Matters | ✅ Pass | Unit tests for SSRF guard, payload builder, and delivery service; integration tests for delivery trigger on status change |
-| IV. Ship Incrementally | ✅ Pass | 4 independent user stories; MCP/XML/name-mapping deferred to v2; data model is backward-safe (new tables, no column removals) |
-| V. Make Failures Visible | ✅ Pass | Every delivery failure captured in `DeliveryAttempt`; Sentry for unexpected exceptions in delivery code |
+*GATE: Re-check after Phase 1 design.*
 
-No violations. Proceeding.
+| Principle | Status | Notes |
+|-----------|--------|-------|
+| **I. Protect Sensitive Data** | ✅ PASS | Raw payloads never persisted (hash only). Credentials stay in api_integrations encrypted layer. `ExecutionResult` never carries request headers. SSRF guard on every outbound call. |
+| **II. Respect the Architecture** | ✅ PASS | Reuses `api_integrations` app for connections/endpoints/auth. Follows OrgQuerySetMixin, HashidGetObjectMixin, UserInContextMixin patterns. New viewset per domain resource. |
+| **III. Test What Matters** | ✅ PASS | Unit tests for PayloadBuilder transforms; integration tests for delivery flow, SSRF guard, idempotency. Frontend tests for DeliverySection state chips and action visibility. |
+| **IV. Ship Incrementally** | ✅ PASS | TP's three-phase split maintained. TemporaryEndpointExecutor is the sole throwaway; the rest is permanent. No premature abstraction (XML deferred). |
+| **V. Make Failures Visible** | ✅ PASS | DeliveryAttempt logs every attempt. `TemporaryEndpointExecutor` errors are logged. Route failures are isolated (per-route isolation). |
 
 ---
 
@@ -60,274 +68,270 @@ No violations. Proceeding.
 
 ```text
 specs/002-data-output-rest-api-mcp/
-├── plan.md                              # This file
-├── research.md                          # Phase 0 research findings
-├── data-model.md                        # Phase 1 — models, migrations, enums
-├── quickstart.md                        # Dev setup notes
+├── plan.md              ← this file
+├── research.md          ← Phase 0 output (design decisions, deviations)
+├── data-model.md        ← Phase 1 output (models, relationships, gaps)
 ├── contracts/
-│   ├── output-routes-api.md             # Output route CRUD contract
-│   └── record-detail-api.md             # Delivery section in record detail + delivery actions
-├── checklists/
-│   └── requirements.md                  # Spec quality checklist
-└── tasks.md                             # Phase 2 output (/speckit-tasks — not yet created)
+│   ├── preview-endpoint.md
+│   ├── test-endpoint.md
+│   ├── send-retry-endpoint.md
+│   └── extraction-record-detail-update.md
+└── tasks.md             ← Phase 2 output (/speckit.tasks — NOT created by /speckit.plan)
 ```
 
-### Source Code Layout
+### Source Code (repository root)
 
 ```text
 backend/django/apps/document_entries/
-├── models.py                            # + OutputRoute, DeliveryAttempt
-├── migrations/
-│   └── 000N_add_output_routes.py        # New tables only; backward-safe
-├── serializers.py                       # + OutputRouteSerializer, extend ExtractionRecordDetailSerializer
-├── document_type_view_set.py            # + output-routes nested route
-├── extraction_record_view_set.py        # + deliver/ action endpoint
-├── services.py                          # + DeliveryService, PayloadBuilder
-└── tests/
-    ├── test_output_routes/
-    │   ├── test_output_route_viewset.py
-    │   └── test_delivery_service.py
-    └── test_extraction_records/
-        └── test_delivery_trigger.py
+├── models.py                         # OutputRoute ✅, DeliveryAttempt ✅
+├── serializers.py                    # OutputRoute serializers ✅; delivery serializer extension ❌
+├── output_route_view_set.py          # CRUD ✅; body_template fix ❌; preview + test actions ❌
+├── extraction_record_view_set.py     # status-update hook ❌; deliver/ action ❌
+├── services.py                       # PayloadBuilder ❌; MockPayloadBuilder ❌; DeliveryService ❌
+├── factories.py                      # OutputRouteFactory ✅; DeliveryAttemptFactory ✅
+└── urls.py                           # ✅
+
+backend/fastapi/backbone/
+└── [DocumentEntryAction.execute — orchestration hook ❌]
 
 backend/django/common/utils/
-└── ssrf_guard.py                        # New — blocks private/loopback/metadata URLs
+└── output_route_executor.py          # TemporaryEndpointExecutor ❌ (TP §4.1 — throwaway)
 
 client/src/app/documentEntry/
-├── documentTypes/steps/
-│   └── OutputStep.tsx                   # New — Output step in wizard
 ├── components/
-│   ├── OutputRouteList.tsx              # New — route list + add/edit dialog
-│   ├── OutputRouteForm.tsx              # New — route create/edit form (inline endpoint)
-│   └── DeliverySection.tsx              # New — shared delivery status section
-├── records/
-│   └── ExtractionRecordDetailPage.tsx   # Modified — add DeliverySection
-└── history/
-    └── actionRenderers/
-        └── DocumentEntryRenderer.tsx    # Modified — add read-only DeliverySection
+│   ├── OutputRouteForm.tsx           # CRUD form ✅; value-transform fields ❌; preview panel ❌
+│   ├── OutputRouteList.tsx           # Route list ✅
+│   └── DeliverySection.tsx           # ❌ (to create)
+├── api.ts                            # output-route hooks ✅; delivery hooks ❌; preview hook ❌
+└── steps/OutputStep.tsx              # ✅
 
-client/src/app/documentEntry/api.ts      # Modified — output routes CRUD + deliver action
-client/src/types/documentEntry.ts        # Modified — OutputRoute, DeliveryAttempt types
+client/src/types/documentEntry.ts     # OutputRoute ✅; DeliveryAttempt ❌; DeliveryRouteStatus ❌
+
+backend/django/tests/test_apps/test_document_entries/
+├── test_output_route_viewset.py      # basic CRUD tests ✅; preview/test tests ❌
+├── test_payload_builder.py           # ❌ (to create — T021, T039)
+├── test_delivery_service.py          # ❌ (to create — T026)
+└── test_extraction_record_viewset.py # delivery section + deliver/ tests ❌ (T031, T032)
 ```
 
----
-
-## Phase Overview
-
-| Phase | Scope | User Story | Key Deliverable |
-|-------|-------|------------|-----------------|
-| 1 | Django — models + migration | All | `OutputRoute`, `DeliveryAttempt` tables |
-| 2 | Django — output route CRUD | US1 | Nested route API under DocumentType |
-| 3 | Django — delivery orchestration | US2, US3 | `DeliveryService`, SSRF guard, trigger hooks |
-| 4 | Django — record detail + history APIs | US3 | Delivery section in record serializer + deliver/ endpoint |
-| 5 | Frontend — Output Step | US1, US4 | Wizard step with route list, form, preview |
-| 6 | Frontend — Record Detail | US3 | `DeliverySection` with approve/retry |
-| 7 | Frontend — History | US3 | Read-only `DeliverySection` |
+**Structure Decision**: Web application (Option 2). Django app at `backend/django/apps/document_entries/`; React feature at `client/src/app/documentEntry/`. Services live inside the Django app (not a separate services/ directory at the repo root), following the project's established pattern.
 
 ---
 
-## Phase 1 — Data Model & Migrations
+## Phase Status
 
-See [`data-model.md`](./data-model.md) for full field specifications.
-
-**New models**: `OutputRoute`, `DeliveryAttempt`
-**Migration**: single `000N_add_output_routes.py` — new tables only; no existing column changes
-
-**Key constraints**:
-- `OutputRoute.api_endpoint` → `OneToOneField(ApiEndpoint, on_delete=PROTECT)` — route owns endpoint; viewset's `perform_destroy` deletes endpoint after route
-- `DeliveryAttempt.output_route` → `ForeignKey(OutputRoute, on_delete=SET_NULL)` — preserves log if route deleted
-- `DeliveryAttempt` stores `route_label_snapshot` and `endpoint_url_snapshot` for audit stability
+| Phase | Description | Status |
+|-------|-------------|--------|
+| **Phase 1** | Model + Route CRUD + Output wizard step | ✅ Complete (one gap: `body_template`) |
+| **Phase 1 gap** | Set `body_template="{{content}}"` in `perform_create` | ❌ Not started |
+| **Phase 2** | PayloadBuilder + TemporaryEndpointExecutor + delivery orchestration + preview/test | ❌ Not started |
+| **Phase 3** | DeliverySection + manual deliver/ action + history surfaces | ❌ Not started |
 
 ---
 
-## Phase 2 — Output Route API (Django)
+## Remaining Work
 
-See [`contracts/output-routes-api.md`](./contracts/output-routes-api.md) for request/response shapes.
+### Phase 1 Gap — body_template Fix
 
-**Endpoints** (nested under DocumentType):
-```
-GET    /api/v1/document-entries/document-types/{id}/output-routes/
-POST   /api/v1/document-entries/document-types/{id}/output-routes/
-GET    /api/v1/document-entries/document-types/{id}/output-routes/{route_id}/
-PATCH  /api/v1/document-entries/document-types/{id}/output-routes/{route_id}/
-DELETE /api/v1/document-entries/document-types/{id}/output-routes/{route_id}/
+> **Why needed**: TP §4.1 requires `body_template = "{{content}}"` so `TemporaryEndpointExecutor` can render the payload via Jinja (`{"content": json.dumps(payload)}`). Current `perform_create` sets `body_template=None`, which means Phase 2 executor will send an empty body.
+
+**Fix** (single line in `output_route_view_set.py:perform_create`):
+```python
+# before
+body_template=None,
+# after
+body_template="{{content}}",
 ```
 
-**Create flow** (single POST):
-1. Validate route fields (label, delivery_mode, repeat_policy, value_transforms)
-2. Create `ApiEndpoint` from `endpoint` sub-object (same validation as API integrations app)
-3. Create `OutputRoute` linking `DocumentType → ApiEndpoint`
-4. Return combined response
-
-**Delete** — viewset `perform_destroy` deletes `ApiEndpoint` first, then `OutputRoute` (PROTECT constraint requires explicit ordering).
-
-**Permissions**: requires `manage_integrations` permission on the organisation.
+No migration needed. No backfill needed — nothing is in production yet.
 
 ---
 
-## Phase 3 — Delivery Orchestration (Django + FastAPI)
+### Phase 2 — Payload + Delivery
 
-### SSRF Guard (`common/utils/ssrf_guard.py`)
+#### 2a. PayloadBuilder (`services/payload_builder.py`)
 
-Raises `SSRFBlockedError` if URL resolves to:
-- Private IPv4 ranges (10.x, 172.16-31.x, 192.168.x)
-- Loopback (127.x, ::1)
-- Link-local (169.254.x, fe80::/10)
-- Cloud metadata endpoint (169.254.169.254)
-- Non-http(s) schemes
+`build(record: ExtractionRecord, route: OutputRoute, *, sample: bool = False) -> dict`
 
-Uses `socket.getaddrinfo` for resolution (checks after DNS, before request).
+Assembles `{ general, email, data }`:
+- **`general`**: `date`, `time`, `record_id` (hashid), `document_type` (name), `trace_id` (from `record.metadata["trace_id"]`)
+- **`email`**: `id`, `from`, `to`, `subject`, `received_at` — from ExtractionRecord email fields
+- **`data`**: built from grouped `ExtractedFieldValue` rows (see data-model.md §PayloadBuilder Data Assembly Rules):
+  - Top-level fields → flat keys in `data`
+  - Single-object group children → nested object keyed by group codename
+  - Repeatable group items → array of objects keyed by group codename, ordered by `group_item_index`
+- `value_transforms` applied per field: `date_format` (default ISO 8601), `strip_non_alphanumeric`
+- `missing_value` from route config: `null` or `""` for absent fields
+- `sample=True`: mock placeholders (type-appropriate; 2 items per repeatable group)
 
-### Payload Builder (`document_entries/services.py`)
+**Hash**: SHA-256 of `json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()` — canonical, deterministic.
 
-`PayloadBuilder.build(record: ExtractionRecord, route: OutputRoute) → dict`
+#### 2b. TemporaryEndpointExecutor (`services/output_route_executor.py`)
 
-Assembles the `general / email / data` envelope:
-- `general`: `date`, `time`, `record_id` (hashid), `document_type` (name), `trace_id` (from `record.metadata`)
-- `email`: `id`, `from`, `to`, `subject`, `received_at` — from `ExtractionRecord` fields
-- `data`: built by **iterating the `DocumentTypeField` tree** (TP VWE-1496 §2–4), not by iterating `ExtractedFieldValue` rows directly. The tree is the canonical structure; EFV rows are looked up per field:
-  1. Fetch all `ExtractedFieldValue` rows for the record via `select_related("document_type_field__parent_field")`; bucket by `(document_type_field_id, group_item_index)`.
-  2. Walk top-level `DocumentTypeField` rows (`parent_field=NULL`) ordered by `display_order`:
-     - **Value field** → `data[codename] = transformed_value` (or missing-value if no EFV row)
-     - **`single_object_group`** → walk child fields (`parent_field=this`); if any EFV row exists → `data[group_codename] = {child_codename: val, ...}`; if optional and no rows → key omitted; if not optional → all children rendered with missing-value behaviour
-     - **`repeatable_group`** → collect child EFV rows grouped by `group_item_index` (sorted 0-based ascending) → `data[group_codename] = [{child_codename: val}, ...]`; no rows → `[]`
-  3. **Group fields themselves have no EFV rows** (TP §4.3) — skip when looking up values; structural only.
-  - Applies `route.value_transforms` per field codename
+Per TP §4.1 — the single swappable connection point. Replaced wholesale when the `api_integrations` execution wrapper lands; nothing else changes.
 
-Value transforms applied in order: (1) date format, (2) strip non-alphanumeric, (3) missing-value behaviour.
+```python
+@dataclass
+class ExecutionResult:
+    outcome: str                       # "success" | "failure"
+    http_status: int | None
+    error_message: str
+    endpoint_url: str
 
-**Payload size guard**: if `len(json.dumps(payload))` > 1 MB → raise `PayloadTooLargeError` (captured in `DeliveryAttempt.error_message`).
+class TemporaryEndpointExecutor:
+    def execute(self, endpoint: ApiEndpoint, connection: ApiConnection, payload: dict) -> ExecutionResult
+```
 
-### DeliveryService (`document_entries/services.py`)
+Steps (TP §4.1, steps 1–7):
+1. Resolve auth service from `connection.provider.auth_type` via `connection_registry.get()`
+2. `service.build_request(connection, endpoint)` → resolved URL + merged headers
+3. `check_url(url)` (SSRF — `common/utils/ssrf_guard`) — reject non-`http(s)`
+4. Payload size check: `len(json.dumps(payload).encode("utf-8")) > 1_048_576` → return `ExecutionResult(failure, …)`
+5. Render `body_template` via Jinja2: `{"content": json.dumps(payload)}`
+6. HTTP request via `httpx` (sync), `endpoint.method`, 30 s timeout
+7. Return `ExecutionResult` — request headers never included in result
 
-`DeliveryService.deliver(record: ExtractionRecord, route: OutputRoute, attempt_number: int) → DeliveryAttempt`
+Note: `DeliveryService.deliver()` (T022) wraps this and creates the `DeliveryAttempt` row.
 
-1. Build payload via `PayloadBuilder`
-2. SSRF guard check on endpoint URL
-3. Fetch connection credentials via existing `api_integrations` auth service
-4. Make HTTP request (`httpx`, 30 s timeout) with merged headers (endpoint headers + connection headers)
-5. Create `DeliveryAttempt` with outcome, HTTP status, error, payload SHA-256 hash
+#### 2c. Delivery Orchestration (FastAPI backbone)
 
-`DeliveryService.trigger_auto_delivery(record: ExtractionRecord) → None`
+In `DocumentEntryAction.execute()`, after `ExtractionRecord` is persisted:
 
-Called after any status transition to deliverable:
-- Fetch enabled Auto routes for the record's DocumentType
-- For each route, check repeat policy (skip if Prevent duplicates + already sent for this record)
-- Call `deliver()` per route; exceptions are caught per-route (one failure doesn't block others)
-- Sentry capture for unexpected exceptions
+```python
+RouteDeliveryService.initialize_and_dispatch(record)
+```
 
-### Trigger Hook Points
+`DeliveryService.trigger_auto_delivery(record)` (T023):
+1. Fetch enabled Auto routes for `record.document_type`
+2. For each route (per-route isolation — exception never propagates):
+   - If `repeat_policy=prevent_duplicates` and a prior `DeliveryAttempt(status=success)` for `(record, route)` exists → skip
+   - Call `DeliveryService.deliver(record, route, attempt_number=next)` (T022):
+     1. `PayloadBuilder.build()` → payload + SHA-256 hash
+     2. `TemporaryEndpointExecutor.execute(endpoint, connection, payload)` → `ExecutionResult`
+     3. Create `DeliveryAttempt` row with outcome, status, hash, snapshots, attempt_number
+3. Return; caller never sees per-route exceptions (Sentry captures them)
 
-**Initial extraction** — `DocumentEntryAction.execute()` in `document_entry_action.py`:
-After `create_extraction_record(...)` returns with a non-blocked status, call `await sync_to_async(DeliveryService.trigger_auto_delivery)(record)`.
+**Requires-approval routes** are not dispatched here; their `delivery_status` is `pending_approval` (derived from no attempts + mode=requires_approval per D-007).
 
-**Status change by reviewer** — `ExtractionRecordViewSet` status-update action:
-After saving the updated status, if new status is deliverable, call `DeliveryService.trigger_auto_delivery(record)`.
+**Re-delivery on status transitions** (T025): Also wire `trigger_auto_delivery` into `ExtractionRecordViewSet` status-update action — after writing the new status, if new status is deliverable, call `trigger_auto_delivery`. Idempotency via `prevent_duplicates` check handles repeated transitions.
+
+#### 2d. Preview + Test Endpoints
+
+Per TP §3.3 — two custom actions on `OutputRouteViewSet`:
+
+**Preview** (`@action(detail=True, methods=["GET"], url_path="payload_preview")`):
+- Query param: `record_id` (optional hashid)
+- Logic: `MockPayloadBuilder.build(route, document_type)` (no record_id) or `PayloadBuilder.build(record, route)` (with record_id); record must belong to same DocumentType + org
+- Response: `{ "format": "json", "payload": {...} }`
+- Auth: DOCUMENT_TYPES_EDIT (same as list)
+
+**Test** (`@action(detail=True, methods=["POST"], url_path="test")`):
+- Body: `{}` (optional `record_id`)
+- Logic: build payload → reuse `BaseConnectionService.test_endpoint(connection, endpoint, body)` from `api_integrations` — no `DeliveryAttempt` written; secret headers redacted by `test_endpoint()` internally
+- Response: `{ http_status, response_snippet, timestamp }` — no header values
+- Auth: DOCUMENT_TYPES_EDIT + API_INTEGRATIONS_CREATE_DELETE
+
+#### 2e. Frontend — Value Transform UI + Preview Panel
+
+In `OutputRouteForm.tsx`:
+- Add per-field transform section: accordion per DocumentType field; date_format input, strip_non_alphanumeric checkbox, missing_value select
+- Add payload preview panel (right column or expandable): calls preview endpoint on debounce; JSON syntax highlight
+
+Add `usePreviewOutputRoute`, `useTestOutputRoute` hooks to `api.ts`.
 
 ---
 
-## Phase 4 — Record Detail & History APIs
+### Phase 3 — Review Surfaces
 
-See [`contracts/record-detail-api.md`](./contracts/record-detail-api.md) for full shape.
+#### 3a. send/retry Endpoint
 
-### `ExtractionRecordDetailSerializer` extension
+`@action(detail=True, methods=["POST"], url_path="deliver")` on `ExtractionRecordViewSet`:
 
-`to_representation()` appends a `delivery` list. Each entry:
+`POST /api/v1/document-entries/records/{record_id}/deliver/`
+
+Body: `{ "output_route_id": "<hashid>" }`
+
+- Validates: route belongs to record's document type; route enabled; delivery mode + repeat policy eligibility
+- `prevent_duplicates`: 409 if any prior `DeliveryAttempt` with `status=success` exists for this `(record, route)` pair — no override in v1
+- `allow_resend`: allows re-send after a previous success
+- Calls same `DeliveryService.deliver()` flow as Phase 2
+- Returns updated delivery status for the route
+
+#### 3b. ExtractionRecord Detail — delivery_states
+
+Extend `ExtractionRecordDetailSerializer` to include:
+
 ```json
-{
-  "output_route_id": "abc123",
-  "route_label": "ERP Inbound",
-  "endpoint_url": "https://erp.example.com/inbound",
-  "delivery_mode": "requires_approval",
-  "repeat_policy": "allow_resend",
-  "enabled": true,
-  "delivery_status": "pending_approval",
-  "can_confirm": true,
-  "can_retry": false,
-  "can_resend": false,
-  "attempts": [...]
+"route_delivery_states": [
+  {
+    "id": "...",
+    "route_label": "...",
+    "endpoint_url": "...",
+    "status": "sent",
+    "delivery_attempts": [
+      { "attempt_number": 1, "endpoint_url": "...", "http_status": 200, "outcome": "success", "error_message": "", "payload_hash": "...", "created_at": "..." }
+    ]
+  }
+]
+```
+
+No raw payload content. `endpoint_url` on each attempt (from executor at execution time).
+
+#### 3c. DeliverySection Component (`components/DeliverySection.tsx`)
+
+- Props: `delivery: DeliveryRouteStatus[]`, `recordId: string`, `readOnly?: boolean`
+- Renders one row per route delivery entry with:
+  - Label + endpoint URL
+  - Status chip (`MantineColor` typed): `pending` → yellow, `pending_approval` → blue, `sent` → green, `send_failed` → red, `not_configured` → gray
+  - Actions (if `!readOnly`): `can_confirm` → "Confirm & Send"; `can_retry` → "Retry"; `can_resend` → "Re-send"
+  - Expandable row → attempt log (timestamp, HTTP status, outcome, error, payload hash — never raw content)
+- Always renders `<ApiError>` and loading `<Skeleton>`
+
+Add `deliverRoute(recordId, outputRouteId)` mutation hook to `api.ts`.
+
+#### 3d. Record Detail + History Integration
+
+- Render `<DeliverySection delivery={...} recordId={id} />` at bottom of extraction record detail page
+- Render `<DeliverySection delivery={...} recordId={id} readOnly />` in Document Entry history tab
+
+#### 3e. TypeScript Types
+
+Add to `client/src/types/documentEntry.ts`:
+
+```typescript
+export interface DeliveryRouteStatus {
+  output_route_id: string | null
+  route_label: string
+  endpoint_url: string | null
+  delivery_mode: DeliveryMode
+  repeat_policy: RepeatPolicy
+  enabled: boolean
+  delivery_status: 'not_configured' | 'pending' | 'pending_approval' | 'sent' | 'send_failed'
+  can_confirm: boolean
+  can_retry: boolean
+  can_resend: boolean
+  attempts: DeliveryAttemptEntry[]
+}
+
+export interface DeliveryAttemptEntry {
+  id: string
+  attempt_number: number
+  created_at: string
+  status: 'success' | 'failed'
+  http_status_code: number | null
+  error_message: string
+  payload_hash: string
 }
 ```
-
-`delivery_status` is derived (not stored): computed from latest `DeliveryAttempt` + route state.
-
-**Delivery status derivation logic**:
-- No attempt + `requires_approval` + enabled → `pending_approval`
-- No attempt + `auto` + enabled → `pending` (not yet triggered, record in transition)
-- Latest attempt `success` + `allow_resend` → `sent`
-- Latest attempt `success` + `prevent_duplicates` → `sent`
-- Latest attempt `failed` → `send_failed`
-- Route disabled → `not_configured`
-
-### Deliver Action Endpoint
-
-```
-POST /api/v1/document-entries/records/{record_id}/deliver/
-Body: { "output_route_id": "abc123" }
-```
-
-Service layer checks eligibility (delivery_mode, current status, repeat_policy) and calls `DeliveryService.deliver()`. Returns updated route delivery status.
-
-### History Detail View
-
-`DocumentEntryHistoryDetailSerializer` (or same serializer with `is_history=True` context flag) omits `can_confirm`, `can_retry`, `can_resend`. Attempts are included read-only.
-
----
-
-## Phase 5 — Frontend: Document Type Wizard (Output Step)
-
-**New step** appended to the existing multi-step wizard as the final step.
-
-**`OutputStep.tsx`**:
-- Lists `OutputRoute` entries fetched from `/document-types/{id}/output-routes/`
-- "Manage API connections" link → full-page navigation to `/integrations/connections/` (browser back returns to wizard)
-- "Add output route" button opens `OutputRouteForm` dialog
-
-**`OutputRouteList.tsx`**:
-- Table rows: label, endpoint URL, delivery mode, enabled toggle, edit/delete icons
-- Empty state with primary CTA
-
-**`OutputRouteForm.tsx`** (create + edit dialog):
-- Step 1: Connection picker (existing `ApiConnection` dropdown, filtered by Connected status)
-- Step 2: Endpoint form (URL, method, headers — same components as API integrations tab; `body_template`, AI input vars hidden)
-- Value transforms accordion: per-field date format, strip toggle, missing-value select
-- Payload preview (mock data by default; toggle to real record preview if records exist)
-- "Test" button — calls existing endpoint test action, displays status + response snippet
-
-**Payload Preview**: Calls a new read endpoint `GET /output-routes/{route_id}/payload-preview/?record_id={optional}` which returns sample payload JSON. Displayed in a `<Code>` block with syntax highlighting.
-
-**Types** added to `documentEntry.ts`:
-- `OutputRoute`, `OutputRouteCreate`, `OutputRouteUpdate`
-- `ValueTransforms`, `DeliveryAttempt`, `DeliveryStatus`
-
----
-
-## Phase 6 — Frontend: Record Detail Delivery Section
-
-**`DeliverySection.tsx`** (shared, not embedded in `ExtractionRecordDetailPage`):
-
-Props: `delivery: DeliveryRouteStatus[]`, `recordId: string`, `readonly?: boolean`
-
-- Renders a row per route: label, endpoint URL, `StatusChip` (colour-coded by `delivery_status`)
-- Expandable row → `DeliveryLog` (attempt list: timestamp, HTTP status, outcome, error message)
-- Inline action buttons:
-  - Confirm & Send (Requires approval + pending_approval + !readonly)
-  - Retry (send_failed + !readonly)
-  - Re-send (sent + allow_resend + !readonly)
-- All mutate via `/records/{id}/deliver/` + `invalidateQueries` on success
-
-**Integration in `ExtractionRecordDetailPage.tsx`**: append `<DeliverySection>` below the fields section.
-
----
-
-## Phase 7 — Frontend: History Read-Only Delivery Section
-
-**`DocumentEntryRenderer.tsx`**: append `<DeliverySection delivery={...} readonly />`.
-
-Data comes from the existing history detail API response (`delivery` field in the record serializer, already read-only by context).
 
 ---
 
 ## Complexity Tracking
 
-No constitution violations. No entries required.
+> No constitution violations. No deferred complexity justifications needed.
+
+| Decision | Rationale |
+|----------|-----------|
+| Derived `delivery_status` (D-007), no RouteDelivery model | Simpler; no extra migration; derivation from latest `DeliveryAttempt` is sufficient for v1 sync delivery. Same pattern as data-model.md §Delivery Status Derivation. |
+| `TemporaryEndpointExecutor` as throwaway | Deliberately narrow — replaced wholesale when `api_integrations` execution wrapper lands. Single swap point; nothing else moves. |
+| Inline sync delivery in FastAPI worker | v1 per TP decision; no Celery dependency. Acceptable because worker is async background context. |
