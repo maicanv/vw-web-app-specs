@@ -1,0 +1,173 @@
+# Agent Assignments
+# Feature: Data Output via REST API (VWE-1521)
+# Generated: 2026-05-26
+# Command: /speckit-agent-assign-assign
+
+agents_scanned:
+  - name: "django-developer"
+    source: "user"
+    description: "Django 4+ REST APIs, models, serializers, viewsets, migrations"
+  - name: "backend-developer"
+    source: "user"
+    description: "Server-side APIs, microservices, backend architecture"
+  - name: "python-pro"
+    source: "user"
+    description: "Type-safe Python, async patterns, utilities"
+  - name: "security-engineer"
+    source: "user"
+    description: "Security controls, SSRF, threat modeling"
+  - name: "frontend-developer"
+    source: "user"
+    description: "React/TypeScript, full-stack frontend"
+  - name: "react-specialist"
+    source: "user"
+    description: "React 18+ advanced patterns, complex stateful components"
+  - name: "typescript-pro"
+    source: "user"
+    description: "Advanced TypeScript, type-level programming"
+  - name: "qa-expert"
+    source: "user"
+    description: "Test strategy, test planning, test authoring"
+
+assignments:
+  T001:
+    agent: "default"
+    reason: "Shell verification task — confirm TP VWE-1496 migration applied; no domain specialization needed"
+  T002:
+    agent: "django-developer"
+    reason: "Django TextChoices enum definitions in models.py"
+  T003:
+    agent: "django-developer"
+    reason: "OutputRoute Django model with FK/OneToOneField constraints"
+  T004:
+    agent: "django-developer"
+    reason: "DeliveryAttempt Django model with FK SET_NULL and snapshot fields"
+  T005:
+    agent: "django-developer"
+    reason: "Django migration with composite indexes for two new tables"
+  T006:
+    agent: "security-engineer"
+    reason: "Security-critical SSRF guard — IP range blocking, DNS resolution, scheme enforcement"
+  T007:
+    agent: "django-developer"
+    reason: "Django test factories for OutputRoute and DeliveryAttempt"
+  T008:
+    agent: "django-developer"
+    reason: "DRF list/detail serializers for OutputRoute"
+  T009:
+    agent: "django-developer"
+    reason: "DRF ModelViewSet with org-scoped queryset and permission gate"
+  T010:
+    agent: "django-developer"
+    reason: "perform_create — atomic ApiEndpoint + OutputRoute creation with connection status check"
+  T011:
+    agent: "django-developer"
+    reason: "perform_destroy — explicit PROTECT-safe cascade delete ordering"
+  T012:
+    agent: "django-developer"
+    reason: "Django nested URL routing under DocumentType"
+  T013:
+    agent: "qa-expert"
+    reason: "Test authoring — CRUD, permission gate, blocked-connection validation"
+  T014:
+    agent: "typescript-pro"
+    reason: "TypeScript type definitions: OutputRoute, OutputRouteCreate, OutputRouteUpdate, ValueTransforms"
+  T015:
+    agent: "frontend-developer"
+    reason: "React Query API layer — useApiQuery/useApiMutation pattern"
+  T016:
+    agent: "frontend-developer"
+    reason: "React list component with empty state and Manage API connections link"
+  T017:
+    agent: "frontend-developer"
+    reason: "React form dialog — connection picker, endpoint form, value transforms accordion"
+  T018:
+    agent: "frontend-developer"
+    reason: "Wizard step component wrapping OutputRouteList + OutputRouteForm"
+  T019:
+    agent: "frontend-developer"
+    reason: "Append OutputStep to existing wizard step array"
+  T020:
+    agent: "django-developer"
+    reason: "PayloadBuilder — complex DocumentTypeField tree walk per TP VWE-1496; value transforms; payload size guard"
+  T021:
+    agent: "qa-expert"
+    reason: "PayloadBuilder unit tests — flat fields, groups, transforms, 1 MB boundary"
+  T022:
+    agent: "django-developer"
+    reason: "DeliveryService.deliver() — httpx, SSRF guard, credential fetch, SHA-256 hash, attempt logging"
+  T023:
+    agent: "django-developer"
+    reason: "trigger_auto_delivery() — route filtering, prevent_duplicates check, per-route exception isolation"
+  T024:
+    agent: "django-developer"
+    reason: "Wire trigger into async DocumentEntryAction.execute() via sync_to_async"
+  T025:
+    agent: "django-developer"
+    reason: "Wire trigger into sync DRF status-update action after deliverable status write"
+  T026:
+    agent: "qa-expert"
+    reason: "DeliveryService tests including SC-003 invariant — no raw content in DeliveryAttempt fields"
+  T027:
+    agent: "qa-expert"
+    reason: "SSRF guard tests — private ranges, loopback, link-local, metadata endpoint, scheme enforcement"
+  T028:
+    agent: "django-developer"
+    reason: "delivery_status pure derivation function from latest DeliveryAttempt + route config"
+  T029:
+    agent: "django-developer"
+    reason: "ExtractionRecordDetailSerializer.to_representation() extension with delivery list and is_history context"
+  T030:
+    agent: "django-developer"
+    reason: "DRF deliver/ action — eligibility checks, 409 for prevent_duplicates, DeliveryService call"
+  T031:
+    agent: "qa-expert"
+    reason: "Tests for all delivery_status variants, deleted-route snapshot, can_confirm/retry/resend flags"
+  T032:
+    agent: "qa-expert"
+    reason: "Tests for deliver/ action — confirm, retry, 409, 422, 404"
+  T033:
+    agent: "typescript-pro"
+    reason: "TypeScript types: DeliveryRouteStatus, DeliveryAttemptEntry, DeliveryStatus"
+  T034:
+    agent: "frontend-developer"
+    reason: "React Query mutation for deliverRoute"
+  T035:
+    agent: "react-specialist"
+    reason: "Complex stateful component — 5-state StatusChip, expandable delivery log, conditional action buttons"
+  T036:
+    agent: "frontend-developer"
+    reason: "Integrate DeliverySection below fields section in record detail page"
+  T037:
+    agent: "frontend-developer"
+    reason: "Integrate read-only DeliverySection in history DocumentEntryRenderer"
+  T038:
+    agent: "django-developer"
+    reason: "DRF payload_preview action — mock vs real-record dispatch, org-scope guard"
+  T039:
+    agent: "django-developer"
+    reason: "MockPayloadBuilder — placeholder values per field type, 2-item repeatable groups"
+  T040:
+    agent: "qa-expert"
+    reason: "Tests for payload preview — mock mode, real-record mode, wrong-org 404"
+  T041:
+    agent: "frontend-developer"
+    reason: "React Query query function for getPayloadPreview with optional record_id"
+  T042:
+    agent: "react-specialist"
+    reason: "Debounced live preview panel with real-record toggle and JSON syntax highlighting"
+  T043:
+    agent: "frontend-developer"
+    reason: "Test button — calls existing endpoint test action, displays result without secret headers"
+  T044:
+    agent: "django-developer"
+    reason: "Migration checklist — verify delivery field, no key collision, history read-only, secret header absence"
+  T045:
+    agent: "frontend-developer"
+    reason: "Add staleTime to React Query calls in OutputStep and DeliverySection"
+  T046:
+    agent: "frontend-developer"
+    reason: "Verify ApiError unconditional render in DeliverySection per project frontend rules"
+  T047:
+    agent: "default"
+    reason: "Manual smoke test following quickstart.md — end-to-end flow verification"
