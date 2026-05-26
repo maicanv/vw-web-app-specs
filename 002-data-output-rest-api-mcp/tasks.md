@@ -44,7 +44,7 @@ client/src/types/documentEntry.ts       Shared TypeScript types
 
 **Purpose**: Verify prerequisites from TP VWE-1496 are in place before any implementation starts.
 
-- [ ] T001 Verify `parent_field` column exists on `DocumentTypeField` and `group_item_index` column exists on `ExtractedFieldValue` (TP VWE-1496 migration must already be applied) — run `docker compose exec django python manage.py showmigrations document_entries` and confirm the field-grouping migration is present
+- [x] T001 Verify `parent_field` column exists on `DocumentTypeField` and `group_item_index` column exists on `ExtractedFieldValue` (TP VWE-1496 migration must already be applied) — run `docker compose exec django python manage.py showmigrations document_entries` and confirm the field-grouping migration is present
 
 ---
 
@@ -54,12 +54,12 @@ client/src/types/documentEntry.ts       Shared TypeScript types
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T002 Add `DeliveryMode` and `RepeatPolicy` TextChoices enums to `backend/django/apps/document_entries/models.py`
-- [ ] T003 Add `OutputRoute` model (fields: `document_type` FK CASCADE, `organisation` FK CASCADE, `api_endpoint` OneToOneField PROTECT, `label` CharField(255), `delivery_mode`, `repeat_policy`, `value_transforms` JSONField default=dict, `enabled` BooleanField default=True, `created_at`, `updated_at`) to `backend/django/apps/document_entries/models.py`
-- [ ] T004 Add `DeliveryAttemptStatus` TextChoices enum and `DeliveryAttempt` model (fields: `extraction_record` FK CASCADE, `output_route` FK SET_NULL null=True, `route_label_snapshot` CharField(255), `endpoint_url_snapshot` URLField(2000), `status`, `http_status_code` IntegerField null=True, `error_message` TextField blank=True, `payload_hash` CharField(64), `attempt_number` PositiveIntegerField default=1, `created_at`) to `backend/django/apps/document_entries/models.py`
-- [ ] T005 Create migration `backend/django/apps/document_entries/migrations/000N_add_output_routes.py` — two new tables only, no existing column changes; add composite indexes `(document_type, enabled)` on OutputRoute and `(extraction_record, output_route)` + `(extraction_record, output_route, created_at)` on DeliveryAttempt
-- [ ] T006 [P] Create `SSRFBlockedError` exception class and `check_url(url: str) -> None` function in `backend/django/common/utils/ssrf_guard.py` — block private IPv4 ranges (10.x, 172.16-31.x, 192.168.x), loopback (127.x, ::1), link-local (169.254.x, fe80::/10), cloud metadata endpoint (169.254.169.254), and non-http(s) schemes; use `socket.getaddrinfo` for DNS resolution before range check
-- [ ] T007 [P] Add `OutputRouteFactory` and `DeliveryAttemptFactory` to `backend/django/apps/document_entries/factories.py`
+- [x] T002 Add `DeliveryMode` and `RepeatPolicy` TextChoices enums to `backend/django/apps/document_entries/models.py`
+- [x] T003 Add `OutputRoute` model (fields: `document_type` FK CASCADE, `organisation` FK CASCADE, `api_endpoint` OneToOneField PROTECT, `label` CharField(255), `delivery_mode`, `repeat_policy`, `value_transforms` JSONField default=dict, `enabled` BooleanField default=True, `created_at`, `updated_at`) to `backend/django/apps/document_entries/models.py`
+- [x] T004 Add `DeliveryAttemptStatus` TextChoices enum and `DeliveryAttempt` model (fields: `extraction_record` FK CASCADE, `output_route` FK SET_NULL null=True, `route_label_snapshot` CharField(255), `endpoint_url_snapshot` URLField(2000), `status`, `http_status_code` IntegerField null=True, `error_message` TextField blank=True, `payload_hash` CharField(64), `attempt_number` PositiveIntegerField default=1, `created_at`) to `backend/django/apps/document_entries/models.py`
+- [x] T005 Create migration `backend/django/apps/document_entries/migrations/000N_add_output_routes.py` — two new tables only, no existing column changes; add composite indexes `(document_type, enabled)` on OutputRoute and `(extraction_record, output_route)` + `(extraction_record, output_route, created_at)` on DeliveryAttempt
+- [x] T006 [P] Create `SSRFBlockedError` exception class and `check_url(url: str) -> None` function in `backend/django/common/utils/ssrf_guard.py` — block private IPv4 ranges (10.x, 172.16-31.x, 192.168.x), loopback (127.x, ::1), link-local (169.254.x, fe80::/10), cloud metadata endpoint (169.254.169.254), and non-http(s) schemes; use `socket.getaddrinfo` for DNS resolution before range check
+- [x] T007 [P] Add `OutputRouteFactory` and `DeliveryAttemptFactory` to `backend/django/apps/document_entries/factories.py`
 
 **Checkpoint**: Migration applied, models importable, SSRF guard importable — user story work can begin.
 
@@ -73,21 +73,21 @@ client/src/types/documentEntry.ts       Shared TypeScript types
 
 ### Backend — Output Route CRUD
 
-- [ ] T008 [US1] Add `OutputRouteListSerializer` and `OutputRouteDetailSerializer` to `backend/django/apps/document_entries/serializers.py` — list serializer returns id, label, endpoint_url, endpoint_method, delivery_mode, repeat_policy, enabled, value_transforms, created_at; detail adds nested endpoint editable fields
-- [ ] T009 [US1] Create `OutputRouteViewSet` (ModelViewSet) in `backend/django/apps/document_entries/output_route_view_set.py` — scoped to `document_type_id` URL kwarg, org-scoped queryset, `manage_integrations` permission gate
-- [ ] T010 [US1] Implement `perform_create` in `OutputRouteViewSet`: atomically create `ApiEndpoint` from `endpoint` sub-object (set `body_template` automatically, hide AI-specific fields), then create `OutputRoute` linking both — raise 400 if connection not in CONNECTED status
-- [ ] T011 [US1] Implement `perform_destroy` in `OutputRouteViewSet`: delete `api_endpoint` first (bypasses PROTECT), then route; preserve `DeliveryAttempt` rows (FK already SET_NULL)
-- [ ] T012 [US1] Register nested routes under DocumentType in `backend/django/apps/document_entries/urls.py` (or the app router) — pattern: `/document-types/{document_type_pk}/output-routes/` and `/{pk}/`
-- [ ] T013 [P] [US1] Write tests for output route CRUD (create with inline endpoint, list, patch, delete with endpoint cleanup, permission gate, blocked-connection validation) in `backend/django/tests/test_apps/test_document_entries/test_output_route_viewset.py`
+- [x] T008 [US1] Add `OutputRouteListSerializer` and `OutputRouteDetailSerializer` to `backend/django/apps/document_entries/serializers.py` — list serializer returns id, label, endpoint_url, endpoint_method, delivery_mode, repeat_policy, enabled, value_transforms, created_at; detail adds nested endpoint editable fields
+- [x] T009 [US1] Create `OutputRouteViewSet` (ModelViewSet) in `backend/django/apps/document_entries/output_route_view_set.py` — scoped to `document_type_id` URL kwarg, org-scoped queryset, `manage_integrations` permission gate
+- [x] T010 [US1] Implement `perform_create` in `OutputRouteViewSet`: atomically create `ApiEndpoint` from `endpoint` sub-object (set `body_template` automatically, hide AI-specific fields), then create `OutputRoute` linking both — raise 400 if connection not in CONNECTED status
+- [x] T011 [US1] Implement `perform_destroy` in `OutputRouteViewSet`: delete `api_endpoint` first (bypasses PROTECT), then route; preserve `DeliveryAttempt` rows (FK already SET_NULL)
+- [x] T012 [US1] Register nested routes under DocumentType in `backend/django/apps/document_entries/urls.py` (or the app router) — pattern: `/document-types/{document_type_pk}/output-routes/` and `/{pk}/`
+- [x] T013 [P] [US1] Write tests for output route CRUD (create with inline endpoint, list, patch, delete with endpoint cleanup, permission gate, blocked-connection validation) in `backend/django/tests/test_apps/test_document_entries/test_output_route_viewset.py`
 
 ### Frontend — Wizard Output Step
 
-- [ ] T014 [US1] Add `OutputRoute`, `OutputRouteCreate`, `OutputRouteUpdate`, `ValueTransforms` TypeScript types to `client/src/types/documentEntry.ts`
-- [ ] T015 [P] [US1] Add `getOutputRoutes`, `createOutputRoute`, `updateOutputRoute`, `deleteOutputRoute` API functions to `client/src/app/documentEntry/api.ts` — use `useApiQuery` / `useApiMutation` pattern from existing code
-- [ ] T016 [US1] Create `OutputRouteList.tsx` in `client/src/app/documentEntry/components/OutputRouteList.tsx` — table of routes (label, endpoint URL, delivery mode, enabled toggle, edit/delete icons), empty state with "Add output route" CTA, "Manage API connections" link (full-page navigation via `<Link>`, NOT new tab)
-- [ ] T017 [US1] Create `OutputRouteForm.tsx` in `client/src/app/documentEntry/components/OutputRouteForm.tsx` — dialog with: connection picker (existing ApiConnection filtered to CONNECTED status), endpoint form (URL, method, headers — reuse existing API integrations components, hide body_template and AI fields), value transforms accordion (per-field date format, strip toggle, missing-value select), Save/Cancel buttons; blocks save when no label or connection not connected
-- [ ] T018 [US1] Create `OutputStep.tsx` in `client/src/app/documentEntry/documentTypes/steps/OutputStep.tsx` — wraps `OutputRouteList` + `OutputRouteForm`, fetches routes via `getOutputRoutes`, shows loading/error states
-- [ ] T019 [US1] Add `OutputStep` to the Document Type wizard step array in `client/src/app/documentEntry/documentTypes/DocumentTypeWizard.tsx` (or equivalent wizard container) as the final step
+- [x] T014 [US1] Add `OutputRoute`, `OutputRouteCreate`, `OutputRouteUpdate`, `ValueTransforms` TypeScript types to `client/src/types/documentEntry.ts`
+- [x] T015 [P] [US1] Add `getOutputRoutes`, `createOutputRoute`, `updateOutputRoute`, `deleteOutputRoute` API functions to `client/src/app/documentEntry/api.ts` — use `useApiQuery` / `useApiMutation` pattern from existing code
+- [x] T016 [US1] Create `OutputRouteList.tsx` in `client/src/app/documentEntry/components/OutputRouteList.tsx` — table of routes (label, endpoint URL, delivery mode, enabled toggle, edit/delete icons), empty state with "Add output route" CTA, "Manage API connections" link (full-page navigation via `<Link>`, NOT new tab)
+- [x] T017 [US1] Create `OutputRouteForm.tsx` in `client/src/app/documentEntry/components/OutputRouteForm.tsx` — dialog with: connection picker (existing ApiConnection filtered to CONNECTED status), endpoint form (URL, method, headers — reuse existing API integrations components, hide body_template and AI fields), value transforms accordion (per-field date format, strip toggle, missing-value select), Save/Cancel buttons; blocks save when no label or connection not connected
+- [x] T018 [US1] Create `OutputStep.tsx` in `client/src/app/documentEntry/documentTypes/steps/OutputStep.tsx` — wraps `OutputRouteList` + `OutputRouteForm`, fetches routes via `getOutputRoutes`, shows loading/error states
+- [x] T019 [US1] Add `OutputStep` to the Document Type wizard step array in `client/src/app/documentEntry/documentTypes/DocumentTypeWizard.tsx` (or equivalent wizard container) as the final step
 
 **Checkpoint**: Users can configure output routes end-to-end in the wizard; routes persist and appear in the list on reload.
 
