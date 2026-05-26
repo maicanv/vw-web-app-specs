@@ -22,6 +22,7 @@ The original plan was built without referencing TP VWE-1521. This section docume
 | **DEV-9** | `WithSingleEndpointMixin` extracted to `api_integrations/mixins.py` | Fields inline on `OutputRoute` | **Defer**. No second consumer of this mixin in v1. Inline is clear and avoids premature abstraction. |
 | **DEV-10** | TP §3.1: manual send via `POST /route-deliveries/{id}/send/` (separate resource) | Plan uses `POST /records/{id}/deliver/` with `{"output_route_id": "..."}` body | **Keep existing plan approach**. Simpler — no additional state model or router registration needed. Same behavior. |
 | **DEV-11** | TP §3.1: preview is `POST /output-routes/preview/` at collection level — accepts unsaved route config | Implemented as `GET detail=True` on a saved route (`/output-routes/{id}/payload_preview/`) | **Keep v1 scope cut**. Unsaved-route preview deferred to v2. Create-dialog preview can only call this after first save. No behavior change for saved routes. |
+| **DEV-12** | TP §3.1: flat URL `/api/v1/document-entries/output-routes/?document_type={id}` | Nested URL `/document-types/{document_type_pk}/output-routes/` (implemented in urls.py) | **Keep nested**. Nested routing is cleaner — org-scoping is enforced by the parent `document_type_pk` path param. Consistent with how field management is nested under document types. |
 
 ---
 
@@ -115,6 +116,33 @@ Group fields themselves do not have `ExtractedFieldValue` rows — they are stru
 
 **Decision**: No retention limit in v1; all `DeliveryAttempt` rows are kept indefinitely.
 **Rationale**: The spec and Confluence page define no retention policy. Simplicity over premature cleanup logic. A retention job can be added in v2.
+
+### D-008: SSRF guard utility
+
+**Decision**: Use `check_url()` from `common/utils/ssrf_guard.py` for all outbound URL validation in the delivery executor and viewset.
+**Rationale**: TP §4.1/§6 references `validate_safe_url` from `common/serializers/url_validators.py`, but that function **skips all hostname/IP validation in dev and CI environments** (see url_validators.py lines 45–48). This makes it unsuitable as the primary SSRF guard for outbound delivery. `check_url` always enforces all checks regardless of environment — stronger and appropriate for delivery security.
+**TP description**: Inaccurate — TP §6 says `validate_safe_url` covers DNS rebinding and all IP ranges; it does not in dev/CI. The implementation's `check_url` is the correct choice.
+**Alternative**: `validate_safe_url` — rejected because dev/CI bypass would leave SSRF enforcement gaps during local testing and CI.
+
+### D-009: SSRF guard on update + re-enable
+
+**Decision**: SSRF check also runs on PATCH when `enabled` changes from False → True, even without endpoint field changes.
+**Rationale**: A route's provider DNS could have changed since creation. Re-enabling without re-checking could activate a route pointing at a newly-private IP.
+**TP coverage**: TP §4.1 only specifies SSRF at send time; the viewset adds an earlier check at config time as defense-in-depth.
+
+### D-010: `OutputRoute` uses `OrgQuerySetMixin`-equivalent via manual filter
+
+**Decision**: `get_queryset` filters `organisation=self.request.organisation` directly instead of inheriting `OrgQuerySetMixin`.
+**Rationale**: The nested URL already constrains to `document_type_pk`; adding a second org filter inline is explicit and avoids mixin ordering complexity.
+**TP reference**: TP §3.1 says to use `OrgQuerySetMixin scoped via document_type__organisation`; the inline filter achieves the same isolation guarantee.
+
+### D-011: `OutputRouteAccessPolicy` instead of `ApiIntegrationAccessPolicy`
+
+**Decision**: Created a dedicated `OutputRouteAccessPolicy` in `document_entry_type_access_policy.py`:
+- list/retrieve → `DOCUMENT_TYPES_EDIT`
+- create/update/destroy → `DOCUMENT_TYPES_EDIT` + `API_INTEGRATIONS_CREATE_DELETE`
+**Rationale**: Output routes are document-type configuration that also creates API endpoints. Both document-type edit access and connector management access are appropriate guards for mutations.
+**TP reference**: TP §3.1 says to reuse `ApiIntegrationAccessPolicy` with `API_INTEGRATIONS_EDIT`. The implementation is more granular and arguably more correct for the dual-domain nature of this resource.
 
 ### D-007: `delivery_status` derivation
 

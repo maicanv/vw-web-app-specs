@@ -76,7 +76,7 @@ client/src/types/documentEntry.ts       Shared TypeScript types
 - [x] T008 [US1] Add `OutputRouteListSerializer` and `OutputRouteDetailSerializer` to `backend/django/apps/document_entries/serializers.py` — list serializer returns id, label, endpoint_url, endpoint_method, delivery_mode, repeat_policy, enabled, value_transforms, created_at; detail adds nested endpoint editable fields
 - [x] T009 [US1] Create `OutputRouteViewSet` (ModelViewSet) in `backend/django/apps/document_entries/output_route_view_set.py` — scoped to `document_type_id` URL kwarg, org-scoped queryset, `manage_integrations` permission gate
 - [x] T010 [US1] Implement `perform_create` in `OutputRouteViewSet`: atomically create `ApiEndpoint` from `endpoint` sub-object (set `body_template` automatically, hide AI-specific fields), then create `OutputRoute` linking both — raise 400 if connection not in CONNECTED status
-- [ ] T010b **[Phase 1 gap]** Fix `body_template=None` → `body_template="{{content}}"` in `output_route_view_set.perform_create` (TP §4.1 requirement — executor renders payload via Jinja); no backfill needed, nothing is in production
+- [x] T010b **[Phase 1 gap]** Fix `body_template=None` → `body_template="{{content}}"` in `output_route_view_set.perform_create` (TP §4.1 requirement — executor renders payload via Jinja); no backfill needed, nothing is in production — **done in PR #745 line 100**
 - [x] T011 [US1] Implement `perform_destroy` in `OutputRouteViewSet`: delete `api_endpoint` first (bypasses PROTECT), then route; preserve `DeliveryAttempt` rows (FK already SET_NULL)
 - [x] T012 [US1] Register nested routes under DocumentType in `backend/django/apps/document_entries/urls.py` (or the app router) — pattern: `/document-types/{document_type_pk}/output-routes/` and `/{pk}/`
 - [x] T013 [P] [US1] Write tests for output route CRUD (create with inline endpoint, list, patch, delete with endpoint cleanup, permission gate, blocked-connection validation) in `backend/django/tests/test_apps/test_document_entries/test_output_route_viewset.py`
@@ -117,7 +117,7 @@ client/src/types/documentEntry.ts       Shared TypeScript types
   - `execute(endpoint: ApiEndpoint, connection: ApiConnection, payload: dict) -> ExecutionResult`
   1. `connection_registry.get(connection.provider.auth_type)` → auth service
   2. `service.build_request(connection, endpoint)` → resolved URL + merged headers
-  3. `validate_safe_url(url)` from `common/serializers/url_validators` (SSRF — TP §4.1/§6) — raises on private IPs, loopback, link-local, metadata IPs, non-http(s); covers DNS rebinding; more complete than `check_url`
+  3. `check_url(url)` from `common/utils/ssrf_guard` (SSRF guard) — raises `SSRFBlockedError` on private/loopback/link-local/metadata IPs and non-http(s); always enforces regardless of environment (unlike `validate_safe_url` which skips IP checks in dev/CI — see research.md DEV-12)
   4. Payload size check: `len(json.dumps(payload).encode("utf-8")) > 1_048_576` → return failure result
   5. Render `body_template` via Jinja2: `Template(endpoint.body_template).render({"content": json.dumps(payload)})` → final request body string
   6. `httpx` sync request, `endpoint.method`, **30 s timeout**
@@ -139,7 +139,7 @@ client/src/types/documentEntry.ts       Shared TypeScript types
   - **TemporaryEndpointExecutor.execute** (TP §4.1): payload > 1 MB → failure result (no HTTP fired); 30 s timeout → failure result with timeout error; `body_template="{{content}}"` correctly renders `json.dumps(payload)` via Jinja into the request body; request headers never present in `ExecutionResult`
   - **SC-003 invariant**: assert `DeliveryAttempt.error_message`, `route_label_snapshot`, `endpoint_url_snapshot` never contain raw extracted field values or document content — only metadata and the SHA-256 payload hash
   - **FR-012 negative**: assert `trigger_auto_delivery` calls `deliver()` exactly once per route per invocation — no automatic retry on failure (failed route stays `send_failed`; caller is not re-invoked)
-- [ ] T027 [P] [US2] Write SSRF guard tests in `backend/django/tests/test_common/test_url_validators.py` — test `validate_safe_url` from `common/serializers/url_validators` (TP §6 — this is the function used by the executor): private IPv4 ranges blocked (10.x, 172.16-31.x, 192.168.x), loopback (127.x) blocked, link-local (169.254.x, fe80::) blocked, AWS/GCP metadata IP (169.254.169.254) blocked, public HTTPS URL passes, non-http(s) scheme blocked, DNS rebinding guard (hostname resolves to private IP) blocked
+- [ ] T027 [P] [US2] Write SSRF guard tests in `backend/django/tests/test_common/test_utils/test_ssrf_guard.py` — test `check_url` from `common/utils/ssrf_guard` (always-on guard used by the executor): private IPv4 ranges blocked (10.x, 172.16-31.x, 192.168.x), loopback (127.x, ::1) blocked, link-local (169.254.x, fe80::) blocked, metadata IP (169.254.169.254) blocked, public HTTPS URL passes, non-http(s) scheme blocked, DNS rebinding (hostname resolves to private IP via getaddrinfo) blocked, IPv6-mapped IPv4 (::ffff:192.168.x.x) blocked
 
 **Checkpoint**: Extraction records auto-deliver to configured routes; delivery attempts logged; failures isolated per route.
 

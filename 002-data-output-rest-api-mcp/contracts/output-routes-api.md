@@ -3,6 +3,19 @@
 **Feature**: `002-data-output-rest-api-mcp`
 **Base path**: `/api/v1/document-entries/document-types/{document_type_id}/output-routes/`
 
+> **TP deviation (DEV-12)**: TP §3.1 uses a flat URL (`/output-routes/?document_type={id}`). The implementation uses nested routing under `document-types/` for org-scoping clarity. See research.md DEV-12.
+
+---
+
+## Permissions
+
+| Action | Required permissions |
+|--------|---------------------|
+| `list`, `retrieve` | `DOCUMENT_TYPES_EDIT` |
+| `create`, `update`, `partial_update`, `destroy` | `DOCUMENT_TYPES_EDIT` **and** `API_INTEGRATIONS_CREATE_DELETE` |
+
+> TP §3.1 referenced `ApiIntegrationAccessPolicy` with `API_INTEGRATIONS_EDIT`. Implementation uses a dedicated `OutputRouteAccessPolicy` — mutations require both document-type edit access and connector management access. See research.md D-011.
+
 ---
 
 ## List Output Routes
@@ -10,8 +23,6 @@
 ```
 GET /api/v1/document-entries/document-types/{document_type_id}/output-routes/
 ```
-
-**Auth**: Organisation-scoped. Requires `manage_integrations` permission.
 
 **Response 200**:
 ```json
@@ -58,20 +69,22 @@ POST /api/v1/document-entries/document-types/{document_type_id}/output-routes/
     "key": "erp-inbound",
     "path": "/inbound",
     "method": "POST",
-    "headers": {}
+    "headers": []
   }
 }
 ```
 
 `endpoint.connection_id` references an existing `ApiConnection` (must be in CONNECTED status).
-`endpoint.key` must be a unique slug within the organisation.
-`endpoint.body_template` is omitted — set automatically by the system.
+`endpoint.key` must be a unique slug within the connection's provider.
+`endpoint.headers` is a list of header objects (matching the existing `ApiEndpoint` headers format).
+`endpoint.body_template` is omitted — set to `"{{content}}"` automatically by the system (TP §4.1).
 AI-specific fields (`parameters`, `configuration`) are hidden from this form.
 
 **Response 201**: Same shape as list item.
 
 **Errors**:
-- `400`: label missing, endpoint validation failed, connection not in CONNECTED status
+- `400`: label missing, endpoint validation failed, connection not in CONNECTED status, endpoint key collision
+- `403`: insufficient permissions (`DOCUMENT_TYPES_EDIT` + `API_INTEGRATIONS_CREATE_DELETE` required)
 - `404`: document_type_id not found in organisation
 
 ---
@@ -82,7 +95,7 @@ AI-specific fields (`parameters`, `configuration`) are hidden from this form.
 GET /api/v1/document-entries/document-types/{document_type_id}/output-routes/{route_id}/
 ```
 
-**Response 200**: Same as list item shape plus `value_transforms` (full detail).
+**Response 200**: Same shape as list item.
 
 ---
 
@@ -92,10 +105,17 @@ GET /api/v1/document-entries/document-types/{document_type_id}/output-routes/{ro
 PATCH /api/v1/document-entries/document-types/{document_type_id}/output-routes/{route_id}/
 ```
 
-Partial update. All fields except `endpoint.connection_id` (connection is locked after creation).
-Endpoint URL/method/headers can be changed. `label`, `delivery_mode`, `repeat_policy`, `enabled`, `value_transforms` all patchable.
+Partial update. `endpoint.connection_id` is locked after creation (omit it from PATCH requests).
+All other fields are patchable: `label`, `delivery_mode`, `repeat_policy`, `enabled`, `value_transforms`, `endpoint.name`, `endpoint.key`, `endpoint.path`, `endpoint.method`, `endpoint.headers`.
 
-**Response 200**: Updated route.
+SSRF re-check runs when endpoint fields change OR when `enabled` changes to `true` (DNS may have changed since creation).
+
+**Response 200**: Updated route (list shape).
+
+**Errors**:
+- `400`: validation error, endpoint key collision, SSRF block on resolved URL
+- `403`: insufficient permissions
+- `404`: route not found in organisation
 
 ---
 
@@ -105,9 +125,13 @@ Endpoint URL/method/headers can be changed. `label`, `delivery_mode`, `repeat_po
 DELETE /api/v1/document-entries/document-types/{document_type_id}/output-routes/{route_id}/
 ```
 
-Deletes the route and its owned `ApiEndpoint`. `DeliveryAttempt` rows for this route are preserved (FK set to NULL).
+Deletes the route and its owned `ApiEndpoint` (explicit cascade: route deleted first, then endpoint). `DeliveryAttempt` rows for this route are preserved (FK set to NULL).
 
 **Response 204**: No content.
+
+**Errors**:
+- `403`: insufficient permissions
+- `404`: route not found in organisation
 
 ---
 
@@ -118,7 +142,9 @@ GET /api/v1/document-entries/document-types/{document_type_id}/output-routes/{ro
 Query params: record_id (optional, hashid)
 ```
 
-Returns the sample payload for the route's current transforms.
+> **TP deviation (DEV-11)**: TP §3.3 defines preview as `POST /output-routes/preview/` at collection level, accepting unsaved route config. v1 scopes this to saved routes only (detail endpoint, GET). Unsaved-route preview deferred to v2.
+
+Returns the shaped payload for the route's current `value_transforms`.
 - Without `record_id`: uses mock/type-appropriate placeholder values; repeatable groups show 2 example items.
 - With `record_id`: uses real extracted values from that record (must belong to the same DocumentType + organisation).
 
@@ -151,6 +177,10 @@ Returns the sample payload for the route's current transforms.
 }
 ```
 
+**Errors**:
+- `400`: record belongs to a different DocumentType
+- `404`: route or record not found in organisation
+
 ---
 
 ## Endpoint Test
@@ -159,7 +189,7 @@ Returns the sample payload for the route's current transforms.
 POST /api/v1/document-entries/document-types/{document_type_id}/output-routes/{route_id}/test/
 ```
 
-Per TP §3.3 — fires a live request to the route's endpoint with the current preview payload (no `DeliveryAttempt` written). Reuses `BaseConnectionService.test_endpoint()` for header redaction and execution.
+Fires a live request to the route's endpoint with the current preview payload. No `DeliveryAttempt` is written. Reuses `BaseConnectionService.test_endpoint()` for header redaction and execution.
 
 **Request body**: `{}` (optional `record_id` for real-data preview; omitted = mock data)
 
@@ -177,6 +207,6 @@ Per TP §3.3 — fires a live request to the route's endpoint with the current p
 - Failures (timeout, SSRF block, non-2xx) return `200` with the failure's `status_code` and error snippet — this endpoint reports what happened, it does not error out on a failed test.
 
 **Errors**:
-- `403`: Permission denied
-- `404`: Route not found in organisation
-- `422`: Connection not in CONNECTED status
+- `403`: insufficient permissions
+- `404`: route not found in organisation
+- `422`: connection not in CONNECTED status
