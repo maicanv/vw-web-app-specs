@@ -51,6 +51,6 @@ npm run test -- --reporter=verbose src/app/documentEntry
 |------|---------|
 | `backend/django/apps/document_entries/models.py` | `OutputRoute`, `DeliveryAttempt` models |
 | `backend/django/apps/document_entries/services.py` | `DeliveryService`, `PayloadBuilder` |
-| `backend/django/common/utils/ssrf_guard.py` | SSRF protection utility |
+| `backend/django/common/serializers/url_validators.py` | SSRF + path validation (`validate_safe_url`, `validate_relative_api_path`) |
 | `client/src/app/documentEntry/documentTypes/steps/OutputStep.tsx` | Output wizard step |
 | `client/src/app/documentEntry/components/DeliverySection.tsx` | Shared delivery status UI |

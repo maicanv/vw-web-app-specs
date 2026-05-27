@@ -185,7 +185,7 @@ class TemporaryEndpointExecutor:
 Steps (TP §4.1, steps 1–7):
 1. Resolve auth service from `connection.provider.auth_type` via `connection_registry.get()`
 2. `service.build_request(connection, endpoint)` → resolved URL + merged headers
-3. `check_url(url)` (SSRF — `common/utils/ssrf_guard`) — reject non-`http(s)`
+3. `validate_safe_url(url)` (SSRF — `common/serializers/url_validators`) — reject non-`http(s)` and private/internal addresses (TP §4.1/§6)
 4. Payload size check: `len(json.dumps(payload).encode("utf-8")) > 1_048_576` → return `ExecutionResult(failure, …)`
 5. Render `body_template` via Jinja2: `{"content": json.dumps(payload)}`
 6. HTTP request via `httpx` (sync), `endpoint.method`, 30 s timeout

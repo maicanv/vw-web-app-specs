@@ -119,10 +119,9 @@ Group fields themselves do not have `ExtractedFieldValue` rows — they are stru
 
 ### D-008: SSRF guard utility
 
-**Decision**: Use `check_url()` from `common/utils/ssrf_guard.py` for all outbound URL validation in the delivery executor and viewset.
-**Rationale**: TP §4.1/§6 references `validate_safe_url` from `common/serializers/url_validators.py`, but that function **skips all hostname/IP validation in dev and CI environments** (see url_validators.py lines 45–48). This makes it unsuitable as the primary SSRF guard for outbound delivery. `check_url` always enforces all checks regardless of environment — stronger and appropriate for delivery security.
-**TP description**: Inaccurate — TP §6 says `validate_safe_url` covers DNS rebinding and all IP ranges; it does not in dev/CI. The implementation's `check_url` is the correct choice.
-**Alternative**: `validate_safe_url` — rejected because dev/CI bypass would leave SSRF enforcement gaps during local testing and CI.
+**Decision**: Use `validate_safe_url()` from `common/serializers/url_validators.py` for all outbound URL validation — at config time (serializers) and at send time (executor). No separate `ssrf_guard.py` module.
+**Rationale**: TP §4.1/§6 is authoritative. `validate_safe_url` covers all required ranges (private, loopback, link-local, metadata IPs, non-HTTPS). The dev/CI bypass is acceptable per TP intent — the same pattern used by `api_integrations` throughout. The previously created `ssrf_guard.py` / `check_url()` was a spec-driven deviation from the TP and has been removed.
+**Removed**: `common/utils/ssrf_guard.py`, `SSRFBlockedError`, `check_url()`, `tests/test_common/test_utils/test_ssrf_guard.py`.
 
 ### D-009: SSRF guard on update + re-enable
 

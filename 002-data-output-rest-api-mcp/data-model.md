@@ -169,23 +169,15 @@ given route.delivery_mode == "auto"
 
 ---
 
-## `common/utils/ssrf_guard.py`
+## SSRF guard
 
-Not a model — a utility. Documented here for completeness.
+SSRF validation uses `validate_safe_url(url)` from `common/serializers/url_validators.py` (TP §3.2, §4.1, §6). No separate `ssrf_guard.py` module.
 
-```python
-class SSRFBlockedError(Exception):
-    pass
-
-def check_url(url: str) -> None:
-    """Raises SSRFBlockedError if url resolves to a blocked address."""
-```
-
-Blocked ranges (evaluated after DNS resolution):
+The blocked ranges (enforced in production; skipped in dev/CI per existing `url_validators` behaviour):
 - RFC 1918 private: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
 - Loopback: 127.0.0.0/8, ::1
 - Link-local: 169.254.0.0/16, fe80::/10
 - AWS/GCP metadata: 169.254.169.254
-- Non-http(s) schemes
+- Non-https schemes (in production)
 
-Uses `socket.getaddrinfo` to resolve the hostname before checking ranges.
+Uses `socket.getaddrinfo` + `ipaddress` (IPv6-mapped IPv4 unmapped) internally.
