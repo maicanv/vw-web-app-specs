@@ -110,7 +110,7 @@ When creating or editing a route, a user can preview the shaped payload (with va
 - **FR-001**: Users MUST be able to add, edit, enable/disable, and delete output routes on a Document Type.
 - **FR-002**: Each output route MUST have: a label, a dedicated API endpoint (created inline via connection + endpoint form as part of route setup — no endpoint reuse across routes), payload format (JSON, v1 only), and delivery mode (Auto or Requires approval).
 - **FR-003**: Output routes MUST reuse the existing API integrations layer for connection, endpoint, auth, and credential storage — no re-entry of credentials in the route form. Each route owns its endpoint; endpoints are not shared between routes or Document Types.
-- **FR-004**: The Output section MUST include a "Manage API connections" link that navigates away to the API connections screen. Users return via browser back or breadcrumb. No modal or drawer — full-page navigation.
+- **FR-004**: The Output step MUST provide access to the API connections management screen. In v1, this is surfaced via the "Manage" button inside the API connection picker in the route create/edit form. Full-page navigation — no modal or drawer.
 - **FR-005**: Route creation MUST be blocked if label or target endpoint is missing, or if the selected connection is not in Connected status.
 
 **Payload Generation**
@@ -128,7 +128,7 @@ When creating or editing a route, a user can preview the shaped payload (with va
 - **FR-010**: The system MUST log every delivery attempt with: timestamp, route reference, outcome, HTTP status, error message (if any), payload hash, attempt number.
 - **FR-011**: Failures on one route MUST NOT affect other routes or other records.
 - **FR-012**: There are NO automatic retries; failed deliveries MUST offer a manual Retry action.
-- **FR-013**: When repeat policy is Prevent duplicates, re-send to the same record + endpoint MUST be blocked with no override path in v1. The Re-send action is only available for routes with the Allow re-send policy.
+- **FR-013**: When repeat policy is Prevent duplicates, re-send to the same record + endpoint MUST be blocked unless the user explicitly overrides it. Override sends are logged via a per-attempt `is_override` flag. The Re-send action for Allow re-send routes is always available without override.
 
 **Security**
 
@@ -179,7 +179,7 @@ When creating or editing a route, a user can preview the shaped payload (with va
 - Q: Can a user pick an existing API endpoint when creating an output route, or must they always create a new one inline? → A: Always create new inline — no endpoint reuse. Each route owns its own dedicated endpoint.
 - Q: Does "Manage API connections" open in a new tab, navigate away, or open in a side drawer? → A: Full-page navigation away; user returns via browser back or breadcrumb.
 - Analysis fix I1: FR-019 status chip values corrected — "Sending" removed; `pending` (auto route) and `pending_approval` (requires-approval route) are the two distinct pre-delivery states.
-- Analysis fix F3: FR-013 "unless explicitly overridden" clause removed — prevent_duplicates has no override path in v1.
+- Analysis fix F3: ~~FR-013 "unless explicitly overridden" clause removed~~ — **Reverted 2026-05-27**: override path restored per TP §3.4. `is_override` flag tracks override sends. See proposals.md ALIGN-8.
 - Analysis fix F4: T026 test task extended to assert SC-003 invariant (no raw content in DeliveryAttempt fields).
 
 ---
