@@ -55,9 +55,9 @@ client/src/types/documentEntry.ts       Shared TypeScript types
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
 - [x] T002 Add `DeliveryMode` and `RepeatPolicy` TextChoices enums to `backend/django/apps/document_entries/models.py`
-- [x] T003 Add `OutputRoute` model (fields: `document_type` FK CASCADE, `organisation` FK CASCADE, `api_endpoint` OneToOneField PROTECT, `label` CharField(255), `delivery_mode`, `repeat_policy`, `value_transforms` JSONField default=dict, `enabled` BooleanField default=True, `created_at`, `updated_at`) to `backend/django/apps/document_entries/models.py`
-- [x] T004 Add `DeliveryAttemptStatus` TextChoices enum and `DeliveryAttempt` model (fields: `extraction_record` FK CASCADE, `output_route` FK SET_NULL null=True, `route_label_snapshot` CharField(255), `endpoint_url_snapshot` URLField(2000), `status`, `http_status_code` IntegerField null=True, `error_message` TextField blank=True, `payload_hash` CharField(64), `attempt_number` PositiveIntegerField default=1, `created_at`) to `backend/django/apps/document_entries/models.py`
-- [x] T005 Create migration `backend/django/apps/document_entries/migrations/000N_add_output_routes.py` — two new tables only, no existing column changes; add composite indexes `(document_type, enabled)` on OutputRoute and `(extraction_record, output_route)` + `(extraction_record, output_route, created_at)` on DeliveryAttempt
+- [x] T003 Add `OutputRoute` model — **implemented per TP §2.1**: inherits `WithSingleEndpointMixin` (FK `api_connection` + FK `api_endpoint`, both SET_NULL); fields: `document_type` FK CASCADE, `label` CharField(100), `payload_format`, `delivery_mode`, `repeat_policy`, `is_enabled`, `payload_config` SchemaField(PayloadConfig), `display_order` IntegerField default=0
+- [x] T004 Add `RouteDelivery` and `DeliveryAttempt` models — **implemented per TP §2.3–2.4**: `RouteDelivery` (extraction_record FK, output_route FK SET_NULL, route_label snapshot, status, attempt_count, last_successful_payload_hash); `DeliveryAttempt` (route_delivery FK, attempt_number, endpoint_url, outcome, http_status, error_message, payload_hash, is_override)
+- [x] T005 Create migration `0008_outputroute_routedelivery_deliveryattempt_and_more.py` — three new tables; composite index `(document_type, is_enabled)` on OutputRoute; partial unique constraint `(extraction_record, output_route)` where output_route IS NOT NULL on RouteDelivery
 - [x] T006 ~~[P] Create `SSRFBlockedError` / `check_url()` in `ssrf_guard.py`~~ — **removed**; TP §6 is authoritative: use `validate_safe_url` from `common/serializers/url_validators.py` only. `ssrf_guard.py` deleted (see research.md D-008).
 - [x] T007 [P] Add `OutputRouteFactory` and `DeliveryAttemptFactory` to `backend/django/apps/document_entries/factories.py`
 
@@ -99,7 +99,7 @@ client/src/types/documentEntry.ts       Shared TypeScript types
 
 **Goal**: After a record transitions to a deliverable status (including after reviewer approval), all enabled Auto routes for that Document Type receive the `general / email / data` payload automatically.
 
-**Independent Test**: Configure an Auto route, trigger an extraction, verify a `DeliveryAttempt` row is created with `status=success` and the external endpoint received the correct payload. Also: update a Needs Review record to an approved status, verify delivery fires again (per clarification Q1).
+**Independent Test**: Configure an Auto route, trigger an extraction, verify a `RouteDelivery` row has `status=sent` and a `DeliveryAttempt` row has `outcome=success` and the external endpoint received the correct payload. Also: update a Needs Review record to an approved status, verify delivery fires again (per clarification Q1).
 
 ### Backend — Payload Builder
 
@@ -123,23 +123,32 @@ client/src/types/documentEntry.ts       Shared TypeScript types
   6. `httpx` sync request, `endpoint.method`, **30 s timeout**
   7. Return `ExecutionResult(outcome, http_status, error_message, endpoint_url)` — request headers never in result
   - `ExecutionResult` is a dataclass defined alongside the executor; reuse or align with `api_integrations.ExecutionResult` if it exists
-  - Then implement `DeliveryService.deliver(record, route, attempt_number) -> DeliveryAttempt` in the same file:
-    1. `PayloadBuilder.build(record, route)` → payload + SHA-256 hash (catch `PayloadTooLargeError` → failed attempt)
-    2. `TemporaryEndpointExecutor().execute(route.api_endpoint, route.api_connection, payload)` → `ExecutionResult`
-    3. Create and return `DeliveryAttempt` with outcome, `http_status_code`, `error_message`, `payload_hash`, `attempt_number`; snapshot `route_label_snapshot = route.label` and `endpoint_url_snapshot = result.endpoint_url`
-    4. Catch ALL exceptions per-route (unexpected → `logger.exception` + Sentry capture, create failed attempt)
-- [ ] T023 [US2] Implement `DeliveryService.trigger_auto_delivery(record: ExtractionRecord) -> None` in `backend/django/apps/document_entries/services.py`:
-  - Fetch enabled Auto routes for `record.document_type` via `(document_type, enabled=True, delivery_mode=auto)` index
-  - For each route: skip if `prevent_duplicates` and latest attempt for `(record, route)` is `success`
-  - Call `deliver(record, route, attempt_number=next_attempt_number)` — failures on one route never raise to the caller
-- [ ] T024 [US2] Wire `trigger_auto_delivery` into `DocumentEntryAction.execute()` in `backend/django/common/actions/document_entry_action.py` — call after `create_extraction_record()` returns with a non-blocked status; use `sync_to_async` wrapper since execute() is async
-- [ ] T025 [US2] Wire `trigger_auto_delivery` into the `ExtractionRecord` status-update action in `backend/django/apps/document_entries/extraction_record_view_set.py` — after writing the new status, if new status is deliverable, call `DeliveryService.trigger_auto_delivery(record)` (synchronous call from sync DRF viewset)
+  - Then implement `RouteDeliveryService.initialize_and_dispatch(record: ExtractionRecord) -> None` in the same file (TP §4.3):
+    1. Fetch all enabled `OutputRoute` rows for `record.document_type` (`is_enabled=True`)
+    2. For each route, get-or-create a `RouteDelivery` row (`extraction_record=record, output_route=route`) snapshotting `route_label=route.label`
+    3. For `delivery_mode=manual`: set `route_delivery.status = RouteDeliveryStatus.PENDING_APPROVAL`; do not dispatch
+    4. For `delivery_mode=auto`: call `deliver(record, route, route_delivery)` (see below) — per-route isolation, exceptions never propagate
+  - Then implement `DeliveryService.deliver(record, route, route_delivery) -> DeliveryAttempt` in the same file:
+    1. `PayloadBuilder.build(record, route)` → payload + SHA-256 hash (catch `PayloadTooLargeError` → create failed attempt, set `route_delivery.status = send_failed`, return)
+    2. If `repeat_policy=prevent_duplicates` and `route_delivery.last_successful_payload_hash` is not None → skip (do not send); return early
+    3. Set `route_delivery.status = RouteDeliveryStatus.SENDING`; `route_delivery.attempt_count += 1`
+    4. `TemporaryEndpointExecutor().execute(route.api_endpoint, route.api_connection, payload)` → `ExecutionResult`
+    5. Create `DeliveryAttempt` with `outcome=result.outcome`, `http_status=result.http_status`, `error_message=result.error_message`, `endpoint_url=result.endpoint_url`, `payload_hash=hash`, `attempt_number=route_delivery.attempt_count`
+    6. On success: set `route_delivery.status = sent`, `route_delivery.last_successful_payload_hash = hash`
+    7. On failure: set `route_delivery.status = send_failed`
+    8. Catch ALL exceptions per-route: `logger.exception` + Sentry capture, create failed attempt, set `route_delivery.status = send_failed`
+- [ ] T023 [US2] Implement `DeliveryService.trigger_auto_delivery(record: ExtractionRecord) -> None` in `backend/django/apps/document_entries/services.py` — called on status transitions to re-dispatch routes for records already initialized (TP §4.3 re-delivery on status change):
+  - Fetch enabled Auto routes for `record.document_type` via `(document_type, is_enabled=True, delivery_mode=auto)` index
+  - For each route: fetch its `RouteDelivery` row; skip if `prevent_duplicates` and `route_delivery.last_successful_payload_hash` is not None
+  - Call `deliver(record, route, route_delivery)` — failures on one route never raise to the caller
+- [ ] T024 [US2] Wire `initialize_and_dispatch` into `DocumentEntryAction.execute()` in `backend/django/common/actions/document_entry_action.py` — call `RouteDeliveryService.initialize_and_dispatch(record)` after `create_extraction_record()` returns; use `sync_to_async` wrapper since execute() is async. This is the first-time initialization path (creates `RouteDelivery` rows + dispatches auto routes).
+- [ ] T025 [US2] Wire `trigger_auto_delivery` into the `ExtractionRecord` status-update action in `backend/django/apps/document_entries/extraction_record_view_set.py` — after writing the new status, if new status is deliverable, call `DeliveryService.trigger_auto_delivery(record)` (synchronous call from sync DRF viewset). `RouteDelivery` rows already exist from T024; this re-dispatches auto routes respecting `prevent_duplicates`.
 - [ ] T026 [P] [US2] Write DeliveryService + TemporaryEndpointExecutor tests in `backend/django/tests/test_apps/test_document_entries/test_delivery_service.py` — cover:
-  - **DeliveryService.deliver**: success → attempt with status=success; HTTP 4xx → failed attempt; SSRF blocked → failed attempt with `http_status_code=None`; `prevent_duplicates` skips already-sent record; one route failure does not block others
+  - **DeliveryService.deliver**: success → `RouteDelivery.status=sent`, `last_successful_payload_hash` set, `DeliveryAttempt.outcome=success`; HTTP 4xx → `RouteDelivery.status=send_failed`, `DeliveryAttempt.outcome=failure`; SSRF blocked → failed attempt with `http_status=None`; `prevent_duplicates` skips route when `last_successful_payload_hash` already set; one route failure does not block others
   - **TemporaryEndpointExecutor.execute** (TP §4.1): payload > 1 MB → failure result (no HTTP fired); 30 s timeout → failure result with timeout error; `body_template="{{content}}"` correctly renders `json.dumps(payload)` via Jinja into the request body; request headers never present in `ExecutionResult`
-  - **SC-003 invariant**: assert `DeliveryAttempt.error_message`, `route_label_snapshot`, `endpoint_url_snapshot` never contain raw extracted field values or document content — only metadata and the SHA-256 payload hash
+  - **SC-003 invariant**: assert `DeliveryAttempt.error_message` and `DeliveryAttempt.endpoint_url` never contain raw extracted field values or document content — only metadata and the SHA-256 payload hash
   - **FR-012 negative**: assert `trigger_auto_delivery` calls `deliver()` exactly once per route per invocation — no automatic retry on failure (failed route stays `send_failed`; caller is not re-invoked)
-- [ ] T027 [P] [US2] Write `validate_safe_url` integration tests in `backend/django/tests/test_common/test_serializers/test_url_validators.py` — cover: private IPv4 ranges blocked (10.x, 172.16-31.x, 192.168.x), loopback blocked, link-local blocked, metadata IP (169.254.169.254) blocked, public HTTPS URL passes, non-https scheme blocked in prod, DNS rebinding blocked, IPv6-mapped IPv4 (::ffff:192.168.x.x) blocked; all checks skipped in dev/CI per existing behaviour
+- [ ] T027 [P] [US2] Write `validate_safe_url` integration tests in `backend/django/tests/test_common/test_serializers/test_url_validators.py` — cover: private IPv4 ranges blocked (10.x, 172.16-31.x, 192.168.x), loopback blocked, link-local blocked, metadata IP (169.254.169.254) blocked, public HTTPS URL passes, non-https scheme blocked in prod, DNS rebinding blocked; all checks skipped in dev/CI per existing behaviour
 
 **Checkpoint**: Extraction records auto-deliver to configured routes; delivery attempts logged; failures isolated per route.
 
@@ -153,24 +162,21 @@ client/src/types/documentEntry.ts       Shared TypeScript types
 
 ### Backend — Record Detail Delivery Extension
 
-- [ ] T028 [US3] Add `derive_delivery_status(route: OutputRoute, latest_attempt: DeliveryAttempt | None) -> str` function in `backend/django/apps/document_entries/services.py` — computes `"pending_approval"` | `"pending"` | `"sent"` | `"send_failed"` | `"not_configured"` from latest `DeliveryAttempt` + route config per data-model.md §Delivery Status Derivation (no DB column; pure derivation; business logic belongs in services not serializers)
-- [ ] T029 [US3] Extend `ExtractionRecordDetailSerializer.to_representation()` in `backend/django/apps/document_entries/serializers.py` to append `delivery` list — each entry: `output_route_id`, `route_label`, `endpoint_url`, `delivery_mode`, `repeat_policy`, `enabled`, `delivery_status` (call `derive_delivery_status()` from T028), `can_confirm`, `can_retry`, `can_resend`, `attempts` (list of attempt objects: id, created_at, status, http_status_code, error_message, payload_hash, attempt_number); when `output_route` is NULL (deleted route) populate label/url from snapshot fields on the latest attempt; if `output_route` is NULL AND no attempts exist → omit the entry from the list entirely; `can_confirm/retry/resend` always False in history context (pass `is_history` via serializer context)
-- [ ] T030 [US3] Add `deliver` action (`@action(detail=True, methods=["post"])`) to `ExtractionRecordViewSet` in `backend/django/apps/document_entries/extraction_record_view_set.py` — accepts `{"output_route_id": "..."}`. Per `contracts/record-detail-api.md`:
-  - Validate: route belongs to record's document type, route enabled, eligibility per delivery_mode + repeat_policy
-  - Call `DeliveryService.deliver()` — returns `{output_route_id, delivery_status, attempt: {...}}`
-  - Error responses:
-    - `400` — invalid/missing `output_route_id` or route not on this record's document type
-    - `403` — missing `manage_integrations` permission
-    - `409` — `prevent_duplicates` policy blocks re-send (latest attempt was success)
-    - `422` — route disabled OR connection not in CONNECTED status
-- [ ] T031 [P] [US3] Write tests for delivery section in record detail response (all status variants, deleted-route snapshot, can_confirm/retry/resend flags, history context flags) in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py`
-- [ ] T032 [P] [US3] Write tests for `deliver/` action endpoint (confirm & send success, retry success, prevent_duplicates 409, disabled route 422, wrong org 404) in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py`
+- [ ] T028 [US3] ~~Add `derive_delivery_status()` function~~ — **not needed**. `RouteDelivery.status` is the stored, authoritative status field (TP §2.3, §4.3). Serialise it directly; do not re-derive from attempts. The five UI chip values (`pending`, `pending_approval`, `sent`, `send_failed`) map 1-to-1 to `RouteDeliveryStatus` enum values. `not_configured` is the UI state for an `OutputRoute` that has **no `RouteDelivery` row** for this record (route was added after the record was processed) — surface this in the serializer by checking for a missing row, not by deriving from attempts.
+- [ ] T029 [US3] Extend `ExtractionRecordDetailSerializer.to_representation()` in `backend/django/apps/document_entries/serializers.py` to append `route_deliveries` list (TP §3.5 key name) — prefetch `route_deliveries__attempts` on the queryset; for each `RouteDelivery` row: `output_route_id` (hashid of `route_delivery.output_route_id`), `route_label` (from `route_delivery.route_label` snapshot), `endpoint_url` (from latest attempt's `endpoint_url` if present, else None), `delivery_mode` / `repeat_policy` / `enabled` (from live `output_route` if not NULL, else omit), `delivery_status` (`route_delivery.status`), `can_confirm` / `can_retry` / `can_resend` (derive from `status`, `delivery_mode`, `repeat_policy`, and `is_history` context flag), `attempts` (list: id, created_at, `outcome`, `http_status`, `error_message`, `payload_hash`, `attempt_number`); if `output_route` is NULL (deleted) populate mode/policy/enabled from most recent attempt snapshot or omit; if `output_route` is NULL AND no attempts exist → omit the entry entirely; pass `is_history=True` via serializer context from the history endpoint → `can_confirm/retry/resend` all False
+- [ ] T030 [US3] Add `send` action (`@action(detail=True, methods=["post"], url_path="send")`) to a new `RouteDeliveryViewSet` in `backend/django/apps/document_entries/` — registered at `route-deliveries/{id}/send/` (TP §3.4). Takes the `RouteDelivery` hashid as the URL param (no body required for confirm/retry; optional `{"override": true}` body to bypass `prevent_duplicates`):
+  - Validate: `route_delivery` belongs to caller's org; route enabled; eligibility per `delivery_mode` + `repeat_policy`
+  - `prevent_duplicates` without override → 409; with `override=True` → proceed and set `DeliveryAttempt.is_override=True`
+  - Call `DeliveryService.deliver(record, route, route_delivery)` — returns updated `RouteDelivery` status + latest attempt
+  - Error responses: `400` bad request, `403` missing permission, `409` prevent_duplicates blocked, `422` route disabled or connection not CONNECTED
+- [ ] T031 [P] [US3] Write tests for delivery section in record detail response (`route_deliveries` key, all status variants, deleted-route snapshot, can_confirm/retry/resend flags, history context flags) in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py`
+- [ ] T032 [P] [US3] Write tests for `route-deliveries/{id}/send/` action (confirm & send success, retry success, prevent_duplicates 409, override bypasses 409, disabled route 422, wrong org 404) in a new `backend/django/tests/test_apps/test_document_entries/test_route_delivery_viewset.py`
 
 ### Frontend — Delivery Section
 
 - [ ] T033 [US3] Add `DeliveryRouteStatus`, `DeliveryAttemptEntry` TypeScript types to `client/src/types/documentEntry.ts`; add `delivery: DeliveryRouteStatus[]` to `ExtractionRecordDetail` type — do not reintroduce `field_values` (already removed)
-- [ ] T034 [P] [US3] Add `deliverRoute(recordId: string, outputRouteId: string)` mutation to `client/src/app/documentEntry/api.ts`
-- [ ] T035 [US3] Create `DeliverySection.tsx` in `client/src/app/documentEntry/components/DeliverySection.tsx` — props: `delivery: DeliveryRouteStatus[]`, `recordId: string`, `readonly?: boolean`; renders per-route rows with label, endpoint URL, `StatusChip` colour-coded by `delivery_status` using the canonical five-value enum: `not_configured` (grey) / `pending` (yellow, auto route awaiting first trigger) / `pending_approval` (blue, requires-approval route awaiting Confirm & Send) / `sent` (green) / `send_failed` (red); expandable row shows `DeliveryLog` (attempt list: timestamp, HTTP status, outcome, error message — payload hash shown, raw content never shown); inline action buttons (Confirm & Send, Retry, Re-send) gated by `can_confirm`, `can_retry`, `can_resend` and `!readonly`; all mutations call `deliverRoute` + `invalidateQueries` on success
+- [ ] T034 [P] [US3] Add `sendRouteDelivery(routeDeliveryId: string, override?: boolean)` mutation to `client/src/app/documentEntry/api.ts` — calls `POST /api/v1/document-entries/route-deliveries/{id}/send/` with optional `{"override": true}` body (TP §3.4)
+- [ ] T035 [US3] Create `DeliverySection.tsx` in `client/src/app/documentEntry/components/DeliverySection.tsx` — props: `delivery: DeliveryRouteStatus[]`, `readonly?: boolean`; renders per-route rows with label, endpoint URL, `StatusChip` colour-coded by `delivery_status` using the canonical five-value enum: `not_configured` (grey) / `pending` (yellow, auto route awaiting first trigger) / `pending_approval` (blue, requires-approval route awaiting Confirm & Send) / `sent` (green) / `send_failed` (red); expandable row shows `DeliveryLog` (attempt list: timestamp, HTTP status, outcome, error message — payload hash shown, raw content never shown); inline action buttons (Confirm & Send, Retry, Re-send) gated by `can_confirm`, `can_retry`, `can_resend` and `!readonly`; all mutations call `sendRouteDelivery(routeDeliveryId)` + `invalidateQueries` on success; Re-send after `prevent_duplicates` prompts confirm dialog and passes `override: true`
 - [ ] T036 [US3] Integrate `<DeliverySection>` at the bottom of `client/src/app/documentEntry/records/ExtractionRecordDetailPage.tsx`, below the `fields` section
 - [ ] T037 [US3] Integrate `<DeliverySection delivery={...} readonly />` at the bottom of `client/src/app/application/history/actionRenderers/DocumentEntryRenderer.tsx` — read-only; no action buttons rendered
 
@@ -186,19 +192,19 @@ client/src/types/documentEntry.ts       Shared TypeScript types
 
 ### Backend — Preview Endpoint
 
-- [ ] T038 [US4] Add TWO custom actions to `OutputRouteViewSet` in `backend/django/apps/document_entries/output_route_view_set.py`:
-  - **`payload_preview`** (`@action(detail=True, methods=["get"])`) — accepts optional `record_id` query param; without `record_id` → `MockPayloadBuilder.build(route, document_type)` using type-appropriate placeholder values (string → `"example"`, date → current date in route's date format, repeatable groups → 2 mock items); with `record_id` → `PayloadBuilder.build(record, route)` (must belong to same DocumentType + org); returns `{"format": "json", "payload": {...}}`. **v1 scope**: saved routes only (detail=True). Unsaved-route preview from the create dialog is deferred — frontend can only call this after first save.
+- [ ] T038 [US4] The `preview` action stub already exists (`detail=False, POST, url_path="preview"` per TP §3.3). Implement its body and add the `test` action:
+  - **`preview`** (`@action(detail=False, methods=["post"], url_path="preview")` — already registered, returning 501) — body: `{"document_type": "<hashid>", "payload_config": {...}}` plus optional `"record_id"`; without `record_id` → `MockPayloadBuilder.build(route_config, document_type)` using type-appropriate placeholder values (string → `"example"`, date → current date in route's date format, repeatable groups → 2 mock items); with `record_id` → `PayloadBuilder.build(record, route)` (record must belong to same DocumentType + org); returns `{"format": "json", "payload": {...}}`. Accepts unsaved route config so the create dialog can call it before first save (TP §3.3).
   - **`test`** (`@action(detail=True, methods=["post"])`) — TP §3.3: build payload via `PayloadBuilder` (or `MockPayloadBuilder` if no record_id), render `body_template` via Jinja with `{"content": json.dumps(payload)}`, fire request via `BaseConnectionService.test_endpoint(connection, endpoint, rendered_body)` (reuses existing api_integrations test action — handles secret header redaction internally). Returns `{ "status_code": int, "response_body": str (truncated 500 chars), "timestamp": ISO 8601 }`. No `DeliveryAttempt` is written.
 - [ ] T039 [US4] Implement `MockPayloadBuilder.build(route: OutputRoute, document_type: DocumentType) -> dict` in `backend/django/apps/document_entries/services.py` — generates placeholder values per field type: `string → "example"`, `number → 0`, `boolean → false`, `currency → "0.00"`, `date → current date in route's date_format`, `enum → first available choice or "EXAMPLE"`; repeatable groups always show exactly 2 items; single_object_groups always present in mock (never omitted)
 - [ ] T040 [P] [US4] Write tests for both preview and test actions in `backend/django/tests/test_apps/test_document_entries/test_output_route_viewset.py`:
-  - **`payload_preview`**: mock mode (no record_id) returns placeholder data with 2 items per repeatable group; real-record mode uses real EFV data; wrong-org record returns 404; record from different DocumentType returns 400
+  - **`preview`** (collection-level POST): mock mode (no record_id) returns placeholder data with 2 items per repeatable group; real-record mode uses real EFV data; wrong-org record returns 404; record from different DocumentType returns 400
   - **`test` action**: returns `status_code`, `response_body` snippet (truncated to 500 chars), `timestamp`; secret header values absent from response; no `DeliveryAttempt` row created after test call; connection in non-CONNECTED status → 422
 
 ### Frontend — Preview + Test Button
 
 - [ ] T041 [US4] Add `getPayloadPreview(documentTypeId, routeId, recordId?)` query function to `client/src/app/documentEntry/api.ts`
 - [ ] T042 [US4] Add payload preview panel to `OutputRouteForm.tsx` — fetches preview via `getPayloadPreview` when form is open; updates on transform changes (debounced 500 ms); toggle "Preview from selected record" switches to real data picker (record selector showing records for this DocumentType); renders JSON in Mantine `<Code>` block with syntax highlighting; shows loading skeleton while fetching
-- [ ] T043 [US4] Wire "Test" button in `OutputRouteForm.tsx` — calls the new `test` action on `OutputRouteViewSet` (`POST /document-types/{id}/output-routes/{route_id}/test/`) added in T038; displays result panel: HTTP status code, response body snippet (truncated to 500 chars), timestamp; never display header values in result
+- [ ] T043 [US4] Wire "Test" button in `OutputRouteForm.tsx` — calls the `test` action on `OutputRouteViewSet` (`POST /api/v1/document-entries/output-routes/{route_id}/test/`) added in T038; displays result panel: HTTP status code, response body snippet (truncated to 500 chars), timestamp; never display header values in result
 
 **Checkpoint**: Users can preview shaped payload and test the endpoint connection without leaving the route form.
 
@@ -237,7 +243,7 @@ client/src/types/documentEntry.ts       Shared TypeScript types
 - T006 (SSRF guard) and T007 (factories) can run in parallel with T002–T005 (models + migration) — different files
 - T013 (TS types) and T015 (API functions) can run in parallel — different files
 - T021 (PayloadBuilder tests) and T027 (SSRF tests) can run in parallel — different test files
-- T031 and T032 (delivery serializer tests and deliver/ action tests) can run in parallel — same test file, different test classes
+- T031 (delivery serializer tests) and T032 (RouteDelivery send/ action tests) can run in parallel — different test files
 
 ---
 
@@ -268,7 +274,7 @@ Once Phase 2 is complete:
 
 After Phase 3 + 4 complete:
 - **Developer A/C**: Phase 5 FE (DeliverySection, record detail integration, history integration)
-- **Developer B**: Phase 5 BE (deliver/ action, serializer delivery extension)
+- **Developer B**: Phase 5 BE (RouteDeliveryViewSet send/ action, serializer delivery extension)
 
 ---
 

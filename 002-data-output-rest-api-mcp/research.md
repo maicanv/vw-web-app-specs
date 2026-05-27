@@ -11,18 +11,18 @@ The original plan was built without referencing TP VWE-1521. This section docume
 
 | # | TP Design | Implementation | Disposition |
 |---|-----------|----------------|-------------|
-| **DEV-1** | `RouteDelivery` (state tracker) + `DeliveryAttempt` (attempt log) — two models | Single `DeliveryAttempt` with snapshot fields (`route_label_snapshot`, `endpoint_url_snapshot`) | **Keep merged approach**. `delivery_status` is derived from latest attempt (D-007). Simpler, no extra migration, fully sufficient for v1 sync delivery. |
-| **DEV-2** | `api_endpoint` FK → ApiEndpoint, SET_NULL, nullable | `api_endpoint` OneToOneField → ApiEndpoint, PROTECT | **Keep OneToOneField**. One dedicated endpoint per route (spec FR-002). PROTECT + explicit cascade in `perform_destroy` achieves the same safety goal. |
-| **DEV-3** | `payload_config = SchemaField(schema=PayloadConfig)` Pydantic model | `value_transforms = JSONField(default=dict)` with inline shape | **Keep JSONField**. Functionally equivalent for v1 (no schema_version needed). Pydantic wrapper can be added non-breakingly later. |
-| **DEV-4** | `DeliveryMode.manual` | `DeliveryMode.requires_approval` | **Keep `requires_approval`**. Spec and UI copy use "Requires Approval"; spec overrides TP on user-facing terminology. |
-| **DEV-5** | `DeliveryAttempt.is_override` + `override=True` body param | Not implemented | **Keep omitted**. Spec FR-013 explicitly removes the override path in v1: "prevent_duplicates has no override path in v1." Spec overrides TP. |
-| **DEV-6** | `OutputRoute.display_order = IntegerField(default=0)` | Not implemented; routes ordered by `created_at, pk` | **Defer**. DnD reorder is a future enhancement. No impact on v1 behavior. |
-| **DEV-7** | `OutputRoute.payload_format` (json/xml stub) | Not implemented | **Defer**. Spec: "Payload format is JSON only in v1." Enum stub adds complexity with no v1 value. |
-| **DEV-8** | `body_template = "{{content}}"` set on endpoint creation | `body_template=None` in `perform_create` | **Fix in Phase 1 gap** (T010b). `TemporaryEndpointExecutor` (Phase 2) depends on this. No backfill needed — nothing is in production yet. One-line fix in `perform_create`. |
-| **DEV-9** | `WithSingleEndpointMixin` extracted to `api_integrations/mixins.py` | Fields inline on `OutputRoute` | **Defer**. No second consumer of this mixin in v1. Inline is clear and avoids premature abstraction. |
-| **DEV-10** | TP §3.1: manual send via `POST /route-deliveries/{id}/send/` (separate resource) | Plan uses `POST /records/{id}/deliver/` with `{"output_route_id": "..."}` body | **Keep existing plan approach**. Simpler — no additional state model or router registration needed. Same behavior. |
-| **DEV-11** | TP §3.1: preview is `POST /output-routes/preview/` at collection level — accepts unsaved route config | Implemented as `GET detail=True` on a saved route (`/output-routes/{id}/payload_preview/`) | **Keep v1 scope cut**. Unsaved-route preview deferred to v2. Create-dialog preview can only call this after first save. No behavior change for saved routes. |
-| **DEV-12** | TP §3.1: flat URL `/api/v1/document-entries/output-routes/?document_type={id}` | Nested URL `/document-types/{document_type_pk}/output-routes/` (implemented in urls.py) | **Keep nested**. Nested routing is cleaner — org-scoping is enforced by the parent `document_type_pk` path param. Consistent with how field management is nested under document types. |
+| **DEV-1** | `RouteDelivery` (state tracker) + `DeliveryAttempt` (attempt log) — two models | ~~Single `DeliveryAttempt`~~ | ~~Keep merged approach~~ **Reverted — follows TP**. Both `RouteDelivery` and `DeliveryAttempt` are present in the code and migration. `RouteDelivery.status` is the authoritative stored status; `DeliveryAttempt` logs each attempt. D-007 "derived status" was incorrect. |
+| **DEV-2** | `api_endpoint` FK → ApiEndpoint, SET_NULL, nullable | ~~`api_endpoint` OneToOneField → ApiEndpoint, PROTECT~~ | ~~Keep OneToOneField~~ **Reverted — follows TP**. Code uses `WithSingleEndpointMixin` which provides FK + SET_NULL for both `api_connection` and `api_endpoint`, matching TP §2.1. |
+| **DEV-3** | `payload_config = SchemaField(schema=PayloadConfig)` Pydantic model | ~~`value_transforms = JSONField(default=dict)`~~ | ~~Keep JSONField~~ **Reverted — follows TP**. Code uses `django-pydantic-field` `SchemaField(schema=PayloadConfig)` per TP §2.2. `PayloadConfig` Pydantic model lives in `payload_config.py`. |
+| **DEV-4** | `DeliveryMode.manual` | ~~`DeliveryMode.requires_approval`~~ | ~~Keep requires_approval~~ **Reverted — follows TP**. Code uses `MANUAL = "manual"` per TP. UI label "Manual" vs "Requires Approval" is a display-only concern; enum value follows TP. |
+| **DEV-5** | `DeliveryAttempt.is_override` + `override=True` body param | ~~Not implemented~~ | ~~Keep omitted~~ **Reverted — follows TP**. `is_override` field is present on `DeliveryAttempt`. FR-013 updated to match. |
+| **DEV-6** | `OutputRoute.display_order = IntegerField(default=0)` | ~~Not implemented~~ | ~~Defer~~ **Reverted — follows TP**. `display_order` field is present on `OutputRoute`. Ordering by `display_order, pk` already in viewset. |
+| **DEV-7** | `OutputRoute.payload_format` (json/xml stub) | ~~Not implemented~~ | ~~Defer~~ **Reverted — follows TP**. `payload_format` field is present on `OutputRoute` with `PayloadFormat` choices. |
+| **DEV-8** | `body_template = "{{content}}"` set on endpoint creation | `body_template=None` in `perform_create` | **Fixed** (T010b). `perform_create` now sets `body_template="{{content}}"`. |
+| **DEV-9** | `WithSingleEndpointMixin` extracted to `api_integrations/mixins.py` | ~~Fields inline on `OutputRoute`~~ | ~~Defer~~ **Reverted — follows TP**. Mixin is implemented in `api_integrations/mixins.py` alongside `ApiIntegrationMixin`. `OutputRoute` inherits from it. |
+| **DEV-10** | TP §3.1: manual send via `POST /route-deliveries/{id}/send/` (separate resource) | ~~Plan: `POST /records/{id}/deliver/`~~ | **Reverted — follows TP**. `RouteDelivery` exists as a model with its own ID. `POST /route-deliveries/{id}/send/` is the correct endpoint (TP §3.4). `RouteDeliveryViewSet` to be created in Phase 3. |
+| **DEV-11** | TP §3.3: preview is `POST /output-routes/preview/` at collection level — accepts unsaved route config | ~~GET detail=True on saved route~~ | **Reverted — follows TP**. Code already has `@action(detail=False, methods=["post"], url_path="preview")`. Accepts unsaved config. |
+| **DEV-12** | TP §3.1: flat URL `/api/v1/document-entries/output-routes/?document_type={id}` | ~~Nested URL~~ | **Reverted — follows TP**. `urls.py` registers `output-routes` as a flat router entry; `document_type` filter via `OutputRouteFilterSet`. |
 
 ---
 
@@ -47,7 +47,7 @@ The original plan was built without referencing TP VWE-1521. This section docume
 | `ExtractionRecord.metadata` | JSONField, default=dict; currently stores `trace_id` here |
 | `ExtractedFieldValue` | Links to `DocumentTypeField` via FK; `group_item_index` (int, null for non-repeatable) determines repeatable group position |
 | Record detail serializer | `ExtractionRecordDetailSerializer._build_fields_list()` already returns the nested grouped shape |
-| No existing output route models | Confirmed — `OutputRoute` and `DeliveryAttempt` are net-new |
+| Output route models | Phase 1 complete — `OutputRoute`, `RouteDelivery`, `DeliveryAttempt` exist in `models.py` and migration `0008` |
 
 ### DocumentEntryAction (ProviderAction)
 
@@ -91,15 +91,18 @@ Group fields themselves do not have `ExtractedFieldValue` rows — they are stru
 
 ### D-002: Endpoint ownership
 
-**Decision**: `OutputRoute.api_endpoint = OneToOneField(ApiEndpoint, on_delete=PROTECT)`.
-**Rationale**: Each route owns exactly one endpoint (no reuse per spec clarification). PROTECT prevents accidental orphan deletion. `perform_destroy` in the viewset deletes the endpoint explicitly before the route.
-**Alternative rejected**: ForeignKey with unique constraint — same semantics but OneToOneField is more semantically precise.
+**Decision**: `WithSingleEndpointMixin` provides `api_endpoint = ForeignKey(ApiEndpoint, SET_NULL, nullable)` per TP §2.1.
+**Rationale**: TP is authoritative. SET_NULL means the route row survives endpoint deletion; `perform_destroy` in the viewset explicitly deletes the endpoint after deleting the route. One endpoint per route is enforced by application logic, not a DB unique constraint.
+**Supersedes**: Earlier plan to use `OneToOneField + PROTECT` — reverted when TP was consulted (see DEV-2).
 
 ### D-003: Delivery trigger for status changes
 
-**Decision**: Call `DeliveryService.trigger_auto_delivery(record)` from two hook points: (1) `DocumentEntryAction.execute()` after record creation, (2) `ExtractionRecordViewSet` status-update action after status write.
-**Rationale**: These are the only two places where a record's status can transition to deliverable. Using explicit call sites (no signals) keeps the flow visible and debuggable. Signals were rejected because they make call ordering implicit and harder to trace in async contexts.
-**Alternative rejected**: Django post_save signal — invisible control flow, harder to test, ordering issues in async FastAPI context.
+**Decision**: Two explicit hook points per TP §4.3:
+1. `DocumentEntryAction.execute()` → `RouteDeliveryService.initialize_and_dispatch(record)` — creates `RouteDelivery` rows + dispatches auto routes for the first time
+2. `ExtractionRecordViewSet` status-update action → `DeliveryService.trigger_auto_delivery(record)` — re-dispatches auto routes on status transitions; `RouteDelivery` rows already exist
+
+**Rationale**: Explicit call sites (no signals) keep the flow visible and debuggable. Signals make ordering implicit and harder to trace in async contexts.
+**Alternative rejected**: Django post_save signal.
 
 ### D-004: Outbound HTTP library
 
@@ -129,21 +132,18 @@ Group fields themselves do not have `ExtractedFieldValue` rows — they are stru
 **Rationale**: A route's provider DNS could have changed since creation. Re-enabling without re-checking could activate a route pointing at a newly-private IP.
 **TP coverage**: TP §4.1 only specifies SSRF at send time; the viewset adds an earlier check at config time as defense-in-depth.
 
+### D-007: `delivery_status` is stored, not derived
+
+**Decision**: `RouteDelivery.status` is the authoritative stored status field per TP §2.3/§4.3. Serialisers read it directly.
+**Rationale**: TP is authoritative. The delivery service updates `RouteDelivery.status` at every transition (`pending` → `sending` → `sent` / `send_failed`). Re-deriving from `DeliveryAttempt` rows would be redundant and potentially inconsistent.
+**Supersedes**: Earlier D-007 "computed in serializer from latest attempt" — incorrect; reverted when TP §2.3 was consulted.
+
 ### D-010: `OutputRoute` uses `OrgQuerySetMixin`-equivalent via manual filter
 
 **Decision**: `get_queryset` filters `organisation=self.request.organisation` directly instead of inheriting `OrgQuerySetMixin`.
-**Rationale**: The nested URL already constrains to `document_type_pk`; adding a second org filter inline is explicit and avoids mixin ordering complexity.
-**TP reference**: TP §3.1 says to use `OrgQuerySetMixin scoped via document_type__organisation`; the inline filter achieves the same isolation guarantee.
+**Rationale**: Flat URL already covered by org-scoped filter. Inline is explicit and avoids mixin ordering complexity. Same isolation guarantee as TP §3.1's `OrgQuerySetMixin scoped via document_type__organisation`.
 
-### D-011: `OutputRouteAccessPolicy` instead of `ApiIntegrationAccessPolicy`
+### D-011: `ApiIntegrationAccessPolicy` (follows TP)
 
-**Decision**: Created a dedicated `OutputRouteAccessPolicy` in `document_entry_type_access_policy.py`:
-- list/retrieve → `DOCUMENT_TYPES_EDIT`
-- create/update/destroy → `DOCUMENT_TYPES_EDIT` + `API_INTEGRATIONS_CREATE_DELETE`
-**Rationale**: Output routes are document-type configuration that also creates API endpoints. Both document-type edit access and connector management access are appropriate guards for mutations.
-**TP reference**: TP §3.1 says to reuse `ApiIntegrationAccessPolicy` with `API_INTEGRATIONS_EDIT`. The implementation is more granular and arguably more correct for the dual-domain nature of this resource.
-
-### D-007: `delivery_status` derivation
-
-**Decision**: Computed in the serializer from latest `DeliveryAttempt` + route config; not stored on the record or route.
-**Rationale**: Storing derived state introduces update-in-two-places bugs. The derivation logic is simple and cheap (one latest-attempt query per route per record fetch).
+**Decision**: `OutputRouteViewSet` uses `ApiIntegrationAccessPolicy` directly per TP §3.1.
+**Rationale**: TP is authoritative. Earlier plan to create a separate `OutputRouteAccessPolicy` was reverted (see DEV-11). `ApiIntegrationAccessPolicy` already gates write access via `API_INTEGRATIONS_EDIT`.
