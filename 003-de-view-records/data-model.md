@@ -22,7 +22,7 @@
 | `email_received_at` | DateTimeField | RFC 5321 received timestamp |
 | `email_subject` | CharField(512) | |
 | `email_sender` | CharField(320) | Raw email address |
-| `overall_confidence` | FloatField (nullable) | Stored at extraction time — confirmed by Spike 1; supports DB-level `lte` filtering |
+| `overall_confidence` | IntegerField (nullable) | Stored at extraction time as an integer percentage 0–100 (`int(round(avg * 100))`); supports DB-level `lte` filtering. `confidence_max` filter param is also 0–100 |
 | `needs_review_reason` | TextField (nullable) | Human-readable reason why review is needed |
 | `extraction_source` | CharField (TextChoices) | `body_only`, `attachments_only`, `both` |
 | `failed_attachment_names` | JSONField | list[str] of attachment names that failed extraction |
@@ -33,7 +33,7 @@
 
 **Indexes** (existing): `(organisation, created_at)`, `(organisation, status)`, `(application, status)`
 
-> **Spike 1 resolved**: `overall_confidence` is a stored `FloatField(null=True)`. No migration required.
+> **Spike 1 resolved**: `overall_confidence` is a stored `IntegerField(null=True)` holding an integer percentage (0–100). No migration required. `email_received_at` is a `DateTimeField` (not VARCHAR).
 
 ---
 
@@ -88,4 +88,4 @@ send_failed      → retrying (auto-retry, if configured)
 
 ## No Migration Required (baseline)
 
-Unless Spike 1 reveals `overall_confidence` is computed, no schema changes are needed for this feature.
+No schema changes are needed for this feature — all filtered/sorted columns (`status`, `overall_confidence`, `email_received_at`, `email_sender`, `email_subject`) already exist.
