@@ -11,7 +11,14 @@ How to exercise the feature end-to-end locally once implemented.
 
 ## Seed / verify templates
 
-The built-in global templates ship via a data migration. After `migrate`, confirm they exist:
+The built-in global templates are seeded by an idempotent management command (not a data
+migration — `.claude/rules/backend.md` forbids backfills in migrations). Run it once:
+
+```bash
+docker compose exec django python manage.py seed_document_type_templates
+```
+
+Then confirm they exist:
 
 - Django admin → **Document Type Templates** → you should see Invoice, Purchase Order, Delivery Note, Remittance Advice, Credit Note, Contract, HR Onboarding Form, Bill of Lading, all **active**, all **global** (no organisation).
 
