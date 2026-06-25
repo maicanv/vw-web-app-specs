@@ -38,11 +38,11 @@ To create an **org-scoped** template: add a new Document Type Template in admin 
 ## API smoke checks
 
 ```bash
-# List (needs auth cookie/header for a document_types:edit user)
-curl -s .../api/v1/document-entries/document-type-templates/ | jq
+# List (needs auth cookie/header for a document_types:edit user) — each item carries the full payload
+curl -s .../api/v1/document-entries/document-type-templates/ | jq '.[].payload'
 
-# Retrieve full template (pre-fill payload)
-curl -s .../api/v1/document-entries/document-type-templates/<hashid>/ | jq '.fields'
+# Retrieve one template (deep-link / refresh only; same shape as a list item)
+curl -s .../api/v1/document-entries/document-type-templates/<hashid>/ | jq '.payload.fields'
 
 # Cross-org / inactive id → 404 (no existence leak)
 ```

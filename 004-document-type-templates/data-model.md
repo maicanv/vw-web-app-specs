@@ -2,7 +2,7 @@
 
 **Feature**: 004-document-type-templates | **Date**: 2026-06-24
 
-One new model. Fields are stored as a Pydantic-validated JSON column (see research D1), reusing the existing `FieldConfig` union from `apps/document_entries/field_config.py`.
+One new model. The wizard pre-fill content is stored as a single Pydantic-validated JSON `payload` column (see research D1 and proposal §2/§5), reusing the existing `FieldConfig` union from `apps/document_entries/field_config.py`. The model stays domain-agnostic — it carries card metadata (`name`/`blurb`/`icon`) plus one opaque `payload` it never inspects.
 
 ---
 
@@ -17,9 +17,7 @@ Inherits `BaseModel` (provides `created_at`, `updated_at`, hashid-encoded `id` i
 | `name` | varchar(80) | NOT NULL | Display name; 3–80 chars, trimmed |
 | `blurb` | varchar(300) | NOT NULL | Short card description |
 | `icon` | varchar(50) | blank, default `""` | Icon identifier; frontend maps to a Tabler icon with fallback |
-| `description` | text | blank, default `""` | Long description → pre-fills DocumentType.description |
-| `instructions` | text | blank, default `""` | → pre-fills DocumentType.instructions |
-| `fields` | jsonb (SchemaField) | NOT NULL, default `[]` | `list[TemplateField]`; Pydantic-validated (see below) |
+| `payload` | jsonb (SchemaField) | NOT NULL | `TemplatePayload` = `{description, instructions, fields}`; Pydantic-validated (see below). Maps 1:1 onto `DocumentTypeFormValues` (minus name) |
 | `is_active` | bool | default `True` | Deactivated templates are hidden from the picker; not deleted |
 | `created_at` | datetime | auto | From `BaseModel` |
 | `updated_at` | datetime | auto | From `BaseModel` |
@@ -31,13 +29,13 @@ Inherits `BaseModel` (provides `created_at`, `updated_at`, hashid-encoded `id` i
 **Validation**:
 - `name`: trimmed, 3–80 chars (mirror DocumentType).
 - `blurb`: required, max 300.
-- `fields`: validated by the `TemplateField` schema below at the `SchemaField` boundary (Pydantic raises on save / serializer validation).
+- `payload`: validated by the `TemplatePayload` schema below at the `SchemaField` boundary (Pydantic raises on save / serializer validation).
 
 ---
 
-## TemplateField (Pydantic schema, not a DB model)
+## TemplatePayload / TemplateField (Pydantic schema, not a DB model)
 
-Mirrors `DocumentTypeField`'s authorable shape, minus persistence/runtime concerns (`display_order` is implicit array order; no `id`, no soft-delete). Depth-2 only: children cannot have children — same as `DocumentTypeField`.
+`payload` is one opaque wrapping object — `{description, instructions, fields}` — that maps 1:1 onto the frontend `DocumentTypeFormValues` (minus `name`, which stays blank). `fields` mirrors `DocumentTypeField`'s authorable shape, minus persistence/runtime concerns (`display_order` is implicit array order; no `id`, no soft-delete). Depth-2 only: children cannot have children — same as `DocumentTypeField`.
 
 ```python
 class TemplateFieldChild(BaseModel):
@@ -50,6 +48,11 @@ class TemplateFieldChild(BaseModel):
 
 class TemplateField(TemplateFieldChild):
     children: list[TemplateFieldChild] = []    # only group-type fields populate this
+
+class TemplatePayload(BaseModel):
+    description: str = ""               # pre-fills DocumentType.description
+    instructions: str = ""             # pre-fills DocumentType.instructions
+    fields: list[TemplateField] = []   # validated field tree (see rules below)
 ```
 
 **Validation rules (reuse existing constants where possible)**:
@@ -58,7 +61,7 @@ class TemplateField(TemplateFieldChild):
 - Group configs (`repeatable_group`, `single_object_group`) follow the same bounds as `FieldConfig` (e.g. `max_items` ≤ `MAX_ITEMS_PER_GROUP`).
 - Non-group fields MUST NOT have `children`; group fields MAY.
 
-> Reuse the logic in the existing `_validate_fields_payload` helper where practical, or factor the shared rules so both the DocumentType field payload and the template `fields` schema validate identically. Avoid duplicating the codename/dedup/bounds rules.
+> Reuse the logic in the existing `_validate_fields_payload` helper where practical, or factor the shared rules so both the DocumentType field payload and the template `payload.fields` schema validate identically. Avoid duplicating the codename/dedup/bounds rules.
 
 ---
 

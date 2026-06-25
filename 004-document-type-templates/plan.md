@@ -14,7 +14,7 @@
 
 ## Summary
 
-Add a library of pre-configured Document Type templates that pre-fill the creation wizard, so users start common document types (Invoice, PO, Contract, …) without manual setup. A new `DocumentTypeTemplate` model stores name, blurb, icon, description, instructions, and a Pydantic-validated `fields` JSON blob (reusing the existing `FieldConfig` union). Templates are global (org-null) or org-scoped, deactivatable, and managed by superadmins in Django admin. A read-only API serves active, org-visible templates to a **create-flow picker modal**; selecting a card shows a **persistent side panel** with the full field tree (group children indented) so the user can preview before committing, then proceeding navigates into the existing wizard with values pre-filled (name always blank).
+Add a library of pre-configured Document Type templates that pre-fill the creation wizard, so users start common document types (Invoice, PO, Contract, …) without manual setup. A new `DocumentTypeTemplate` model stores card metadata (name, blurb, icon) plus a single opaque, Pydantic-validated `payload` JSON blob (`{description, instructions, fields}`, reusing the existing `FieldConfig` union). Templates are global (org-null) or org-scoped, deactivatable, and managed by superadmins in Django admin. A read-only API (single serializer, full `payload` inline) serves active, org-visible templates to a **create-flow picker modal**; selecting a card shows a **persistent side panel** with the full field tree (group children indented) rendered from the already-loaded list (no per-card fetch), then proceeding navigates into the existing wizard with values pre-filled (name always blank).
 
 **Scope note**: The "Load from template" edit flow (Replace/Merge into an existing Document Type) is **out of scope** — templates apply at create time only.
 
@@ -68,8 +68,8 @@ Backend — within the existing `apps/document_entries/` app (no new app):
 ```text
 backend/django/apps/document_entries/
 ├── models.py                       # + DocumentTypeTemplate
-├── template_schema.py              # + TemplateField / TemplateFieldChild Pydantic models (reuse FieldConfig + shared field validation)
-├── serializers.py                  # + DocumentTypeTemplateListSerializer, DocumentTypeTemplateSerializer (field_count)
+├── template_schema.py              # + TemplatePayload / TemplateField / TemplateFieldChild Pydantic models (reuse FieldConfig + shared field validation)
+├── serializers.py                  # + DocumentTypeTemplateSerializer (single serializer, full payload inline; field_count derived from payload.fields)
 ├── document_type_template_view_set.py   # + ReadOnlyModelViewSet (custom org-visible get_queryset)
 ├── urls.py                         # register the template viewset
 ├── admin.py                        # + DocumentTypeTemplateAdmin
@@ -86,12 +86,12 @@ Frontend — within the existing `documentEntry/documentTypes/` feature:
 ```text
 client/src/app/documentEntry/documentTypes/
 ├── DocumentTypesListPage.tsx       # "New Document Type" opens the picker modal (both entry points)
-├── DocumentTypeCreatePage.tsx      # read location.state.templateId → fetch + pre-fill (name blank)
+├── DocumentTypeCreatePage.tsx      # read location.state.templateId → pre-fill from list cache (or retrieve on deep-link); name blank
 └── templates/
-    ├── TemplatePickerModal.tsx     # two-panel: card grid (left) + field-preview side panel (right); navigates with router state
+    ├── TemplatePickerModal.tsx     # two-panel: card grid (left) + field-preview side panel (right); renders from loaded list (no per-card fetch); navigates with router state
     ├── TemplateFieldPreview.tsx    # renders the selected template's field tree (group children indented)
     └── templateIcon.tsx            # icon-identifier → Tabler icon map with fallback
-client/src/types/documentEntry.ts   # + DocumentTypeTemplate types (list + detail)
+client/src/types/documentEntry.ts   # + DocumentTypeTemplate type (single shape, includes full payload)
 ```
 
 **Structure Decision**: Extend the existing `document_entries` Django app and `documentEntry/documentTypes` frontend feature — no new app or top-level module. This keeps templates co-located with the Document Type code they pre-fill and inherits its routing, access policy, and subscription gating.
@@ -101,29 +101,29 @@ client/src/types/documentEntry.ts   # + DocumentTypeTemplate types (list + detai
 Aligned to the spec's user stories; each phase is independently testable.
 
 **Phase A — Model, admin, seed (foundation; spec US2 / P2)**
-- `DocumentTypeTemplate` model + migration; `TemplateField` Pydantic schema reusing `FieldConfig` and shared field-validation rules (codename regex, ≤50 fields, group bounds, depth-2).
-- Django admin: editable template + JSON `fields` (validated); list/filter by `is_active` and organisation.
+- `DocumentTypeTemplate` model + migration; `TemplatePayload` (`{description, instructions, fields}`) Pydantic schema reusing `FieldConfig` and shared field-validation rules (codename regex, ≤50 fields, group bounds, depth-2).
+- Django admin: editable template + JSON `payload` (validated); list/filter by `is_active` and organisation.
 - `DocumentTypeTemplateFactory`; idempotent data migration seeding the 8 global templates.
 - Tests: schema validation (bad codename, >50 fields, child-with-children rejected), admin save round-trip.
 - *Demoable*: superadmin creates/deactivates templates; global vs org-scoped visible in admin.
 
 **Phase B — Read-only API (foundation for picker)**
-- `DocumentTypeTemplateViewSet` (ReadOnlyModelViewSet) with custom `get_queryset` (active + global-OR-own-org, ordered by name); list vs detail serializers; `field_count`.
+- `DocumentTypeTemplateViewSet` (ReadOnlyModelViewSet) with custom `get_queryset` (active + global-OR-own-org, ordered by name); a **single** `DocumentTypeTemplateSerializer` (full `payload` inline) for both list + retrieve; `field_count` derived from `payload.fields`.
 - Access policy gating on `document_types:edit`; `404` for hidden/cross-org ids.
-- Detail serializer returns the full `fields` tree (incl. group `children`) — single source for both the picker side-panel preview (FR-003a) and wizard pre-fill (FR-004). No separate preview endpoint.
-- Tests: org isolation (no cross-org leak), active filter, global visibility, list payload shape, detail pre-fill payload, `404` behavior.
+- The list already carries the full `payload` (incl. group `children`) — single source for both the picker side-panel preview (FR-003a) and wizard pre-fill (FR-004). No per-card detail fetch; the retrieve endpoint covers deep-link / refresh only.
+- Tests: org isolation (no cross-org leak), active filter, global visibility, list payload shape (full `payload` inline), retrieve payload, `404` behavior.
 
 **Phase C — Create-flow picker (spec US1 / P1)**
 - `TemplatePickerModal` opened from both "New Document Type" entry points on the list page; **two-panel layout** — card grid (left) with pre-selected "Start from scratch", persistent field-preview panel (right). All templates rendered at once, no pagination; layout sized for ~20 cards (FR-011, AS-6).
-- On card select: fetch the template detail (`useApiQuery` keyed by id, cached) and render `TemplateFieldPreview` — top-level fields (name + type) plus group `children` indented under their parent (FR-003a, AS-3). "Start from scratch" selected → panel shows an empty/placeholder state.
-- Proceed: navigate to `/types/new` with `location.state.templateId` (or none). `DocumentTypeCreatePage` on mount, if `templateId`, reuse the cached detail to pre-fill `description` / `instructions` / `fields` — **name left blank**; all values editable.
-- `templateIcon` map with fallback; `DocumentTypeTemplate` TS types (list + detail).
+- On card select: render `TemplateFieldPreview` from the already-loaded list item (no extra request) — top-level fields (name + type) plus group `children` indented under their parent (FR-003a, AS-3). "Start from scratch" selected → panel shows an empty/placeholder state.
+- Proceed: navigate to `/types/new` with `location.state.templateId` (or none). `DocumentTypeCreatePage` on mount, if `templateId`, pre-fills `description` / `instructions` / `fields` from the list cache (or a retrieve fetch on deep-link / refresh) — **name left blank**; all values editable.
+- `templateIcon` map with fallback; `DocumentTypeTemplate` TS type (single shape, includes full `payload`).
 - Tests: card-select populates the preview panel with the full tree (group children indented); template→form mapping keeps name blank; "start from scratch" yields blank form + empty preview; re-pick fully replaces state.
 
 ## Complexity Tracking
 
 | Decision | Why Needed | Simpler/Other Alternative Rejected Because |
 |----------|------------|-------------------------------------------|
-| `fields` as Pydantic JSON blob instead of a relational `DocumentTypeTemplateField` | Templates are write-once snapshots, never queried/joined/reconciled; frontend wants nested JSON anyway; consistent with existing `SchemaField` usage. Less code. | A relational model adds a table, migration, inline admin, and a re-nesting serializer for data never queried relationally. Documented upgrade path exists (research D1) if admin authoring becomes painful. |
+| Single opaque `payload` (`{description, instructions, fields}`) as a Pydantic JSON blob instead of three domain columns / a relational `DocumentTypeTemplateField` | Keeps the model domain-agnostic (stores/returns the payload without inspecting it); maps 1:1 onto `DocumentTypeFormValues`; templates are write-once snapshots never queried/joined; consistent with existing `SchemaField` usage. Less code, and lines up with a future generic-template `kind` discriminator. | Three columns thread the pieces separately and lose the generic-template path. A relational model adds a table, migration, inline admin, and a re-nesting serializer for data never queried relationally. Documented upgrade path exists (research D1) if admin authoring becomes painful. |
 | Custom `get_queryset` instead of `OrgQuerySetMixin` | Need global-OR-own-org (`org IS NULL OR org = request.org`); the mixin filters strictly by a required org FK. | Reusing the mixin can't express the nullable-global case. The custom predicate is one line. |
-| Reuse the detail endpoint for both side-panel preview and pre-fill | One read-only payload already carries the full field tree; the picker fetches it on select and hands the same cached object to the wizard. | A dedicated "preview" endpoint or embedding full `fields` in the list response duplicates the tree and bloats the list payload for cards never opened. |
+| One serializer (full `payload` inline) for list + retrieve; no per-card fetch | The set is tiny (~20 templates, depth-2); the list already carries every payload, so the picker renders the side-panel preview and hands the wizard its pre-fill straight from the loaded list. | A list/detail split + per-card detail fetch adds a serializer pair and a round-trip on every card select for data the list already returned. The `ExtractionRecord` split is driven by large paginated lists — not the case here. |
