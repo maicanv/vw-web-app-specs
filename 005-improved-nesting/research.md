@@ -24,7 +24,7 @@ All Technical-Context unknowns resolved below. No `NEEDS CLARIFICATION` remain.
 
 ## R4 — Static envelope keys (TYSON `SenderIdentifier`, `Message.DateTime`)
 
-- **Decision**: Static wrapper keys, constants, and metadata live **in the author-written body template**, not in a fixed data section. The template references the extracted-data object via `{{data}}` / `{{data.CargoLines}}` and provided metadata via `{{id}}`, `{{email_processed_at}}`, etc. Constant strings are typed directly into the template JSON.
+- **Decision**: Static wrapper keys, constants, and metadata live **in the author-written body template**, not in a fixed data section. The template references the extracted-data object via `{{ data }}` / `{{ data.CargoLines | tojson }}` and provided metadata under a single `metadata` root via `{{ metadata.id }}`, `{{ metadata.email.received_at }}`, etc. Constant strings are typed directly into the template JSON.
 - **Rationale**: This is exactly why the fixed `{general, email, data}` envelope is being replaced (FR-010/011) — the customer's contract dictates the wrapper, so the wrapper belongs to the route, authored per target.
 - **Alternatives**: Author-configured envelope fields in the Document Type (rejected — conflates extraction schema with delivery shape; the same extraction may feed differently-shaped routes); computed `general` block (rejected — that *is* the legacy envelope being removed).
 

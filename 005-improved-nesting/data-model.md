@@ -48,8 +48,10 @@ Order.Pickup.window (single-object grp)  → group_item_path = []
 
 - **New**: a body-template field (author-written JSON with placeholders) used for body-carrying
   methods (POST/PUT/PATCH). When the method carries no body, the template is not required.
-- Placeholders: metadata (`{{id}}`, `{{email_processed_at}}`, …), whole extracted-data object
-  (`{{data}}`), and group-level references into it (`{{data.CargoLines}}`).
+- Placeholders (sandboxed Jinja2, `StrictUndefined`): metadata under a single `metadata` root
+  (`{{ metadata.id }}`, `{{ metadata.email.received_at }}`, …), whole extracted-data object
+  (`{{ data }}`), and group-level references into it rendered with `| tojson`
+  (`{{ data.CargoLines | tojson }}`).
 - Validity is enforced at **save** (FR-014): malformed JSON / unresolvable placeholder = hard
   error (blocks save); unreferenced configured fields = non-blocking warning.
 - Replaces the fixed `{general, email, data}` envelope for these routes. Existing routes keep

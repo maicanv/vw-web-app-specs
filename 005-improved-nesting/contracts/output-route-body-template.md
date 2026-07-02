@@ -10,23 +10,27 @@ Adds an author-written JSON body template to body-carrying Output Routes, replac
 
 ## Template language
 
-Placeholders inside an otherwise-literal JSON document:
+Jinja2 (sandboxed, `StrictUndefined`) placeholders inside an otherwise-literal JSON document.
+The author places quotes on scalar placeholders where JSON needs a string, and renders containers
+with the stock `| tojson` filter (never quoted).
 
 | Placeholder | Resolves to |
 |-------------|-------------|
-| `{{id}}`, `{{email_processed_at}}`, … | provided record metadata variables |
-| `{{data}}` | the whole nested extracted-data object |
-| `{{data.CargoLines}}` (dotted) | a group-level subtree within the extracted data |
+| `{{ metadata.id }}`, `{{ metadata.email.received_at }}`, … | provided record metadata variables, under a single `metadata` root (email-derived fields grouped as `metadata.email.*`) |
+| `{{ data }}` | the whole nested extracted-data object |
+| `{{ data.CargoLines }}` (dotted) | a group-level subtree within the extracted data |
 
-Wrappers, constants, and metadata live in the template — not in a fixed data section.
+Containers MUST use `| tojson` (`{{ data.CargoLines | tojson }}`); a quoted `"{{ data.CargoLines }}"`
+emits a stringified object, not valid JSON. Wrappers, constants, and metadata live in the
+template — not in a fixed data section.
 
 ```jsonc
 // Author template
 {
   "Message": {
-    "DateTime": "{{email_processed_at}}",
+    "DateTime": "{{ metadata.email.received_at }}",
     "SenderIdentifier": "VW",
-    "Orders": { "Order": { "Reference": "{{id}}", "CargoLines": "{{data.CargoLines}}" } }
+    "Orders": { "Order": { "Reference": "{{ metadata.id }}", "CargoLines": {{ data.CargoLines | tojson }} } }
   }
 }
 ```
@@ -50,4 +54,4 @@ human review, never an autonomous send.
 
 The dialog lists offered metadata fields (with keys) and **all** configured groups & fields,
 highlighting each entry when referenced in the body and un-highlighting when not. A whole-object
-`{{data}}` reference counts every nested field as referenced.
+`{{ data }}` reference counts every nested field as referenced.

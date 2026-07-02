@@ -10,7 +10,7 @@
 
 ## Summary
 
-A Document Type author needs to define nested field groups of arbitrary depth — groups inside groups, and repeatable sections inside repeatable sections — so extraction and delivery can produce deeply nested integration payloads. The motivating target is a transport-order message (customer "DLG", example file `TYSON.json`) shaped `Order → CargoLines[] → Goods[] → Packing`, reaching ~6 levels. Today Document Types allow exactly one level of grouping and forbid a group inside a group; every layer that reads the field tree (validation, extraction, review, delivery) assumes depth 2. This feature lifts that limit end-to-end and replaces the fixed delivery envelope with a per-route, author-written body template so the payload can match a customer's exact contract.
+A Document Type author needs to define nested field groups of arbitrary depth — groups inside groups, and repeatable sections inside repeatable sections — so extraction and delivery can produce deeply nested integration payloads. The motivating target is a transport-order message (customer "DLG", example file `TYSON.json`) shaped `Order → CargoLines[] → Goods[] → Packing`, reaching ~3 real group levels (the depth cap is 5). Today Document Types allow exactly one level of grouping and forbid a group inside a group; every layer that reads the field tree (validation, extraction, review, delivery) assumes depth 2. This feature lifts that limit end-to-end and replaces the fixed delivery envelope with a per-route, author-written body template so the payload can match a customer's exact contract.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -73,7 +73,7 @@ In the Output Route creation dialog, when a body-carrying method (POST/PUT/PATCH
 **Acceptance Scenarios**:
 
 1. **Given** the Output Route dialog with a body-carrying method selected, **When** the author opens it, **Then** a JSON body template field is shown.
-2. **Given** a template using metadata placeholders (e.g. `{{id}}`, `{{email_processed_at}}`), the whole extracted-data object (`{{data}}`), and group-level references (`{{data.CargoLines}}`), **When** a record is delivered, **Then** each placeholder resolves to its value/object and nesting is preserved end-to-end (each cargo line carries only its own goods; each good its own packing).
+2. **Given** a template using metadata placeholders under a single `metadata` root (e.g. `{{ metadata.id }}`, `{{ metadata.email.received_at }}`), the whole extracted-data object (`{{ data }}`), and group-level references rendered with the `tojson` filter (`{{ data.CargoLines | tojson }}`), **When** a record is delivered, **Then** each placeholder resolves to its value/object and nesting is preserved end-to-end (each cargo line carries only its own goods; each good its own packing).
 3. **Given** a body-carrying method is not selected, **When** the author configures the route, **Then** no body template field is required.
 
 ---
@@ -117,7 +117,7 @@ The Output Route dialog shows a helper panel listing the offered metadata fields
 - **FR-008**: On truncated/incomplete extraction output, the system MUST retry once and, if still incomplete, flag the record for review instead of persisting partial data silently.
 - **FR-009**: The record detail page MUST render the full nested structure read-correctly at every level, preserving per-leaf confidence.
 - **FR-010**: The Output Route creation dialog MUST show a JSON body template field when a body-carrying method (POST/PUT/PATCH) is selected, and not require one otherwise.
-- **FR-011**: The body template MUST support placeholders for provided metadata variables (e.g. `{{id}}`, `{{email_processed_at}}`), the whole extracted-data object (`{{data}}`), and group-level references into it (e.g. `{{data.CargoLines}}`); wrappers, metadata and constants live in the template, not a fixed data section.
+- **FR-011**: The body template (sandboxed Jinja2, `StrictUndefined`) MUST support placeholders for provided metadata variables under a single `metadata` root (e.g. `{{ metadata.id }}`, `{{ metadata.email.received_at }}`), the whole extracted-data object (`{{ data }}`), and group-level references into it rendered with the stock `tojson` filter (e.g. `{{ data.CargoLines | tojson }}`); scalar placeholders are author-quoted where JSON needs a string, containers use `| tojson` (never quoted); wrappers, metadata and constants live in the template, not a fixed data section.
 - **FR-012**: On delivery the route MUST render the template into the final payload with nesting preserved end-to-end.
 - **FR-013**: The dialog MUST show a helper panel listing offered metadata fields (with keys) and all configured groups & fields, highlighting each when referenced in the body.
 - **FR-014**: On save, the system MUST treat an invalid/unresolvable placeholder or malformed JSON as a hard error that blocks saving, and unreferenced configured fields as a non-blocking warning.

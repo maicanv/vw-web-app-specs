@@ -25,8 +25,9 @@ End-to-end walkthrough for the DLG/TYSON shape (`Order → CargoLines[] → Good
 ## 4. Configure delivery (US4 + US5)
 
 - Output Route → choose POST → a JSON body-template field appears.
-- Write the customer's exact shape using `{{id}}`, `{{email_processed_at}}`, `{{data}}`,
-  `{{data.CargoLines}}`.
+- Write the customer's exact shape (sandboxed Jinja2) using `{{ metadata.id }}`,
+  `{{ metadata.email.received_at }}`, `{{ data }}`, and `{{ data.CargoLines | tojson }}`
+  (containers use `| tojson`; scalar placeholders are author-quoted).
 - Helper panel lists metadata + all configured fields, highlighting referenced ones.
 - Save: malformed JSON / bad placeholder = blocked; unreferenced fields = warning only.
 
