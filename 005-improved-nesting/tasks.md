@@ -102,16 +102,16 @@ description: "Task list for Improved Nesting (Arbitrary-Depth Field Groups) — 
 
 ### Tests for User Story 2 ⚠️ (write first, ensure they FAIL)
 
-- [ ] T016 [P] [US2] vw-llm-app write-back test: `group_item_path` values correct across levels (`[0]`,`[1]`,`[0,0]`,`[0,1]`,`[1,0]`…); top-level + single-object-group children → `[]`. In `vw-llm-app` tests (per tp §8).
-- [ ] T017 [P] [US2] vw-llm-app test: `min_items` padding / `max_items` capping / unknown-codename drop applied at **every** level, not just the first.
-- [ ] T018 [P] [US2] vw-llm-app test: absent optional group → no hallucinated value (FR-007); truncated/invalid output → retry once then flag for review, no silent partial (FR-008).
+- [X] T016 [P] [US2] vw-llm-app write-back test: `group_item_path` values correct across levels (`[0]`,`[1]`,`[0,0]`,`[0,1]`,`[1,0]`…); top-level + single-object-group children → `[]`. In `vw-llm-app` tests (per tp §8).
+- [X] T017 [P] [US2] vw-llm-app test: `min_items` padding / `max_items` capping / unknown-codename drop applied at **every** level, not just the first.
+- [X] T018 [P] [US2] vw-llm-app test: absent optional group → no hallucinated value (FR-007); truncated/invalid output → retry once then flag for review, no silent partial (FR-008).
 
 ### Implementation for User Story 2
 
-- [ ] T019 [US2] In `vw-llm-app/src/prompts/templates.py`: render the nested `fields` tree inline to arbitrary depth (today stops at one group level) — repeatable group → array of items, single-object group → nested object (omit if optional + absent), recurse. Per tp §5.
-- [ ] T020 [US2] In `vw-llm-app/src/actions/document_entry_side_effect_handler.py`: make `_ExtractionResult` / `_RepeatableGroupResult` / `_SingleObjectGroupResult` mutually recursive (Pydantic v2 forward refs + `model_rebuild()`); keep the `dict[str, Any]` per-subtree escape hatch so the `function_calling` tool schema doesn't explode at depth.
-- [ ] T021 [US2] In the same handler: recursive write-back — walk the tree accumulating the index path down each repeatable ancestor, write `group_item_path` on each leaf; carry existing `min_items` padding / `max_items` capping / unknown-codename handling at every level.
-- [ ] T022 [US2] Robustness (tp §5): one-pass extraction; on truncated/invalid output retry once then flag for review (no silent partial); raise the LLM timeout for this flow to **≥60s** (FR-016) in the vw-llm-app extraction config/call site.
+- [X] T019 [US2] In `vw-llm-app/src/prompts/templates.py`: render the nested `fields` tree inline to arbitrary depth (today stops at one group level) — repeatable group → array of items, single-object group → nested object (omit if optional + absent), recurse. Per tp §5.
+- [X] T020 [US2] In `vw-llm-app/src/actions/document_entry_side_effect_handler.py`: make `_ExtractionResult` / `_RepeatableGroupResult` / `_SingleObjectGroupResult` mutually recursive (Pydantic v2 forward refs + `model_rebuild()`); keep the `dict[str, Any]` per-subtree escape hatch so the `function_calling` tool schema doesn't explode at depth.
+- [X] T021 [US2] In the same handler: recursive write-back — walk the tree accumulating the index path down each repeatable ancestor, write `group_item_path` on each leaf; carry existing `min_items` padding / `max_items` capping / unknown-codename handling at every level.
+- [X] T022 [US2] Robustness (tp §5): one-pass extraction; on truncated/invalid output retry once then flag for review (no silent partial); raise the LLM timeout for this flow to **≥60s** (FR-016) in the vw-llm-app extraction config/call site.
 
 **Checkpoint**: Nested extraction achieves correct structural grouping with zero cross-item leakage (SC-002, SC-003, SC-006).
 
