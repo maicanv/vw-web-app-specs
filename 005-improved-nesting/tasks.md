@@ -45,8 +45,8 @@ description: "Task list for Improved Nesting (Arbitrary-Depth Field Groups) — 
 
 **Purpose**: Confirm shared prerequisites; no new top-level dirs.
 
-- [ ] T001 Confirm `jinja2` (with `jinja2.sandbox.SandboxedEnvironment`) is available to the Django backend; add to `backend/pyproject.toml` (default/django group) only if not already resolvable, then `poetry lock` — do not add if it is already a transitive dependency.
-- [ ] T002 [P] Verify Pydantic v2 forward-ref + `model_rebuild()` support is usable in `vw-llm-app` (already a dep) — no install expected; document the version in the task PR if a bump is needed.
+- [X] T001 Confirm `jinja2` (with `jinja2.sandbox.SandboxedEnvironment`) is available to the Django backend; add to `backend/pyproject.toml` (default/django group) only if not already resolvable, then `poetry lock` — do not add if it is already a transitive dependency.
+- [X] T002 [P] Verify Pydantic v2 forward-ref + `model_rebuild()` support is usable in `vw-llm-app` (already a dep) — no install expected; document the version in the task PR if a bump is needed.
 
 **Checkpoint**: Template-render and recursive-model dependencies confirmed available.
 
@@ -58,9 +58,9 @@ description: "Task list for Improved Nesting (Arbitrary-Depth Field Groups) — 
 
 **⚠️ CRITICAL**: US2 and US3 cannot begin until this phase is complete.
 
-- [ ] T003 Add `group_item_path = JSONField(default=list)` to `ExtractedFieldValue` in `backend/django/apps/document_entries/models.py` (keep `group_item_index` transitionally; keep `group_field`). Per tp §3.2 / data-model.md.
-- [ ] T004 Generate the migration via `docker compose exec django python manage.py makemigrations document_entries` (NEVER hand-write): (a) add `group_item_path`, (b) data-migrate existing rows — `[]` when no repeatable ancestor else `[group_item_index]`, (c) drop `group_item_index`. Lossless per tp §3.4 (no prod nested rows). Confirm Open-item #1 (no in-flight prod records) before dropping the column.
-- [ ] T005 [P] Backend test: migration data-migration maps a legacy `group_item_index` row to `[old_index]` and a null-index row to `[]`, in `backend/django/tests/test_migrations/` (or the document_entries test module). Written before T004 is finalized.
+- [X] T003 Add `group_item_path = JSONField(default=list)` to `ExtractedFieldValue` in `backend/django/apps/document_entries/models.py` (keep `group_item_index` transitionally; keep `group_field`). Per tp §3.2 / data-model.md.
+- [X] T004 Generate the migration via `docker compose exec django python manage.py makemigrations document_entries` (NEVER hand-write): (a) add `group_item_path`, (b) data-migrate existing rows — `[]` when no repeatable ancestor else `[group_item_index]`, (c) drop `group_item_index`. Lossless per tp §3.4 (no prod nested rows). Confirm Open-item #1 (no in-flight prod records) before dropping the column.
+- [X] T005 [P] Backend test: migration data-migration maps a legacy `group_item_index` row to `[old_index]` and a null-index row to `[]`, in `backend/django/tests/test_migrations/` (or the document_entries test module). Written before T004 is finalized.
 
 **Checkpoint**: `group_item_path` exists and back-fills losslessly — extraction and review can now build on it.
 
@@ -74,18 +74,18 @@ description: "Task list for Improved Nesting (Arbitrary-Depth Field Groups) — 
 
 ### Tests for User Story 1 ⚠️ (write first, ensure they FAIL)
 
-- [ ] T006 [P] [US1] Serializer test: full TYSON/DLG tree (repeatable-in-repeatable + single-object) validates and round-trips on GET after create, in `backend/django/apps/document_entries/tests/` (per tp §8, contracts/document-type-fields.md).
-- [ ] T007 [P] [US1] Serializer test: nesting depth > 5 → `400` with depth-limit message; depth == 5 accepted (boundary), same test module.
-- [ ] T008 [P] [US1] Serializer test: leaf-field count > 150 → `400` (`MAX_FIELDS_ERR`); group nodes excluded from the cap; `min_items`/`max_items` validated at every level.
-- [ ] T009 [P] [US1] Serializer test: `reconcile_fields` re-parents and deletes nested nodes on PATCH and round-trips (tree-wide codename uniqueness + active-type immutability unchanged).
+- [X] T006 [P] [US1] Serializer test: full TYSON/DLG tree (repeatable-in-repeatable + single-object) validates and round-trips on GET after create, in `backend/django/apps/document_entries/tests/` (per tp §8, contracts/document-type-fields.md).
+- [X] T007 [P] [US1] Serializer test: nesting depth > 5 → `400` with depth-limit message; depth == 5 accepted (boundary), same test module.
+- [X] T008 [P] [US1] Serializer test: leaf-field count > 150 → `400` (`MAX_FIELDS_ERR`); group nodes excluded from the cap; `min_items`/`max_items` validated at every level.
+- [X] T009 [P] [US1] Serializer test: `reconcile_fields` re-parents and deletes nested nodes on PATCH and round-trips (tree-wide codename uniqueness + active-type immutability unchanged).
 
 ### Implementation for User Story 1
 
-- [ ] T010 [US1] In `backend/django/apps/document_entries/field_config.py`: add `MAX_GROUP_DEPTH = 5`; change the field cap to count **leaf** fields only, capped at 150 (replaces `MAX_FIELDS_PER_DOCUMENT_TYPE = 50` which counted the whole tree). Per tp §3.1.
-- [ ] T011 [US1] In `backend/django/apps/document_entries/serializers.py`: remove the `NESTED_GROUP_ERR` rejection (~l.329); make `_validate_group_field` recurse — accept nested groups, enforce depth ≤ 5 (`400` clear message), leaf-count ≤ 150, group-node exclusion, `min_items`/`max_items` per level, and "value fields cannot have children".
-- [ ] T012 [US1] In `backend/django/apps/document_entries/services.py`: make `reconcile_fields` (~l.190) recursive — create/update/delete/re-parent nodes at any depth so a saved nested tree round-trips.
-- [ ] T013 [US1] In `client/src/app/documentEntry/types/documentEntry.ts`: make `DocumentTypeField` recursive (a group node's children may be group nodes).
-- [ ] T014 [US1] In `client/src/app/documentEntry/FieldsStep.tsx`: replace the depth-2 client block with a depth-`MAX_GROUP_DEPTH` block (tooltip on the boundary); allow adding a group inside a group; reflect the 150 leaf-count limit.
+- [X] T010 [US1] In `backend/django/apps/document_entries/field_config.py`: add `MAX_GROUP_DEPTH = 5`; change the field cap to count **leaf** fields only, capped at 150 (replaces `MAX_FIELDS_PER_DOCUMENT_TYPE = 50` which counted the whole tree). Per tp §3.1.
+- [X] T011 [US1] In `backend/django/apps/document_entries/serializers.py`: remove the `NESTED_GROUP_ERR` rejection (~l.329); make `_validate_group_field` recurse — accept nested groups, enforce depth ≤ 5 (`400` clear message), leaf-count ≤ 150, group-node exclusion, `min_items`/`max_items` per level, and "value fields cannot have children".
+- [X] T012 [US1] In `backend/django/apps/document_entries/services.py`: make `reconcile_fields` (~l.190) recursive — create/update/delete/re-parent nodes at any depth so a saved nested tree round-trips.
+- [X] T013 [US1] In `client/src/app/documentEntry/types/documentEntry.ts`: make `DocumentTypeField` recursive (a group node's children may be group nodes).
+- [X] T014 [US1] In `client/src/app/documentEntry/FieldsStep.tsx`: replace the depth-2 client block with a depth-`MAX_GROUP_DEPTH` block (tooltip on the boundary); allow adding a group inside a group; reflect the 150 leaf-count limit.
 - [ ] T015 [US1] In `client/src/app/documentEntry/RepeatableGroupSection.tsx` / `GroupCard.tsx`: recurse into child *groups* (re-enter the same components), not only leaf `FieldRow`s.
 
 **Checkpoint**: An author can build, save, reopen, and edit the full DLG tree (SC-001).
