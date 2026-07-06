@@ -86,7 +86,7 @@ description: "Task list for Improved Nesting (Arbitrary-Depth Field Groups) — 
 - [X] T012 [US1] In `backend/django/apps/document_entries/services.py`: make `reconcile_fields` (~l.190) recursive — create/update/delete/re-parent nodes at any depth so a saved nested tree round-trips.
 - [X] T013 [US1] In `client/src/app/documentEntry/types/documentEntry.ts`: make `DocumentTypeField` recursive (a group node's children may be group nodes).
 - [X] T014 [US1] In `client/src/app/documentEntry/FieldsStep.tsx`: replace the depth-2 client block with a depth-`MAX_GROUP_DEPTH` block (tooltip on the boundary); allow adding a group inside a group; reflect the 150 leaf-count limit.
-- [ ] T015 [US1] In `client/src/app/documentEntry/RepeatableGroupSection.tsx` / `GroupCard.tsx`: recurse into child *groups* (re-enter the same components), not only leaf `FieldRow`s.
+- [X] T015 [US1] In `client/src/app/documentEntry/RepeatableGroupSection.tsx` / `GroupCard.tsx`: recurse into child *groups* (re-enter the same components), not only leaf `FieldRow`s.
 
 **Checkpoint**: An author can build, save, reopen, and edit the full DLG tree (SC-001).
 
@@ -127,14 +127,14 @@ description: "Task list for Improved Nesting (Arbitrary-Depth Field Groups) — 
 
 ### Tests for User Story 3 ⚠️ (write first, ensure they FAIL)
 
-- [ ] T023 [P] [US3] Backend serializer test: record-detail emits the nested `fields` tree recursively, grouping each repeatable group's items by the index at *that* group's depth in `group_item_path`; per-leaf confidence preserved; zero cross-item leakage (contracts/extraction-record-detail.md, tp §4.2).
-- [ ] T024 [P] [US3] Backend regression test: a flat / single-level record's detail response is byte-identical to before (FR-015 / SC-005).
+- [X] T023 [P] [US3] Backend serializer test: record-detail emits the nested `fields` tree recursively, grouping each repeatable group's items by the index at *that* group's depth in `group_item_path`; per-leaf confidence preserved; zero cross-item leakage (contracts/extraction-record-detail.md, tp §4.2).
+- [X] T024 [P] [US3] Backend regression test: a flat / single-level record's detail response is byte-identical to before (FR-015 / SC-005).
 
 ### Implementation for User Story 3
 
-- [ ] T025 [US3] In `backend/django/apps/document_entries/serializers.py`: make the record-detail serializer emit the `fields` tree recursively to full depth (`DocumentTypeFieldSerializer` already nests via `source="children"`), grouping repeatable items by `group_item_path` depth-index, preserving per-leaf confidence.
-- [ ] T026 [US3] In `client/src/app/documentEntry/types/documentEntry.ts`: make `ExtractedFieldEntry` recursive (a group entry's children may be group entries).
-- [ ] T027 [US3] In `client/src/app/documentEntry/` record-detail components: recurse into nested groups/arrays, rendering per-leaf confidence at every level.
+- [X] T025 [US3] In `backend/django/apps/document_entries/serializers.py`: make the record-detail serializer emit the `fields` tree recursively to full depth (`DocumentTypeFieldSerializer` already nests via `source="children"`), grouping repeatable items by `group_item_path` depth-index, preserving per-leaf confidence.
+- [X] T026 [US3] In `client/src/app/documentEntry/types/documentEntry.ts`: make `ExtractedFieldEntry` recursive (a group entry's children may be group entries).
+- [X] T027 [US3] In `client/src/app/documentEntry/` record-detail components: recurse into nested groups/arrays, rendering per-leaf confidence at every level.
 
 **Checkpoint**: Reviewer sees the full nested structure with confidence intact; flat records unchanged.
 
@@ -150,18 +150,18 @@ description: "Task list for Improved Nesting (Arbitrary-Depth Field Groups) — 
 
 ### Tests for User Story 4 ⚠️ (write first, ensure they FAIL)
 
-- [ ] T028 [P] [US4] Backend render test: `render(template_str, context)` with `{metadata, data}` produces a payload that deep-equals the `TYSON.json` shape — each cargo line owns only its own goods, each good its own packing (SC-004); `{{ data.CargoLines | tojson }}` and quoted scalar placeholders resolve correctly.
-- [ ] T029 [P] [US4] Backend regression test: existing flat/single-level routes produce byte-identical delivery output (FR-015 / SC-005).
-- [ ] T030 [P] [US4] Backend test: `render()` uses `SandboxedEnvironment` + `StrictUndefined` — an unknown variable raises (SSTI/attribute-traversal guard, tp §6.1).
+- [X] T028 [P] [US4] Backend render test: `render(template_str, context)` with `{metadata, data}` produces a payload that deep-equals the `TYSON.json` shape — each cargo line owns only its own goods, each good its own packing (SC-004); `{{ data.CargoLines | tojson }}` and quoted scalar placeholders resolve correctly.
+- [X] T029 [P] [US4] Backend regression test: existing flat/single-level routes produce byte-identical delivery output (FR-015 / SC-005).
+- [X] T030 [P] [US4] Backend test: `render()` uses `SandboxedEnvironment` + `StrictUndefined` — an unknown variable raises (SSTI/attribute-traversal guard, tp §6.1).
 
 ### Implementation for User Story 4
 
-- [ ] T031 [US4] Add the body-template field to `OutputRoute` in `backend/django/apps/document_entries/models.py` (author-written Jinja, used for body-carrying methods). Per tp §3.3 — supersedes the fixed envelope for those routes; existing routes unaffected.
-- [ ] T032 [US4] Generate the migration for the new `OutputRoute` field via `makemigrations document_entries` (NEVER hand-write).
-- [ ] T033 [US4] Implement `render(template_str, context) -> str` in the VWE-1521 `TemporaryEndpointExecutor` (per tp §6 Decisions — NOT a new `document_entries` module): thin string+dict→string, no DE coupling, `SandboxedEnvironment` + `StrictUndefined`. `context = {"metadata": <dict §6.4>, "data": <nested dict>}`.
-- [ ] T034 [US4] In `backend/django/apps/document_entries/services.py`: make `_build_data_section` (~l.761) recursive — value → scalar via `_apply_field_transform`; single-object group → dict (omit if optional + all descendants missing, made recursive); repeatable group → list grouped by `group_item_path` index; feed it as `data` into `render()`.
-- [ ] T035 [US4] Build the `metadata` context root (tp §6.4): `metadata.id`, `metadata.processed_at`, `metadata.email.{id,received_at,from,to,cc,subject}` from the extraction record + source email; wire delivery to render the body template instead of the fixed envelope for body-carrying methods.
-- [ ] T036 [US4] In `client/src/app/documentEntry/` Output Route dialog: show a body-template editor when a body-carrying method (POST/PUT/PATCH) is selected; not required otherwise. Preview/test reuse existing panels (VWE-1521 render path).
+- [X] T031 [US4] Add the body-template field to `OutputRoute` in `backend/django/apps/document_entries/models.py` (author-written Jinja, used for body-carrying methods). Per tp §3.3 — supersedes the fixed envelope for those routes; existing routes unaffected.
+- [X] T032 [US4] Generate the migration for the new `OutputRoute` field via `makemigrations document_entries` (NEVER hand-write).
+- [X] T033 [US4] Implement `render(template_str, context) -> str` in the VWE-1521 `TemporaryEndpointExecutor` (per tp §6 Decisions — NOT a new `document_entries` module): thin string+dict→string, no DE coupling, `SandboxedEnvironment` + `StrictUndefined`. `context = {"metadata": <dict §6.4>, "data": <nested dict>}`.
+- [X] T034 [US4] In `backend/django/apps/document_entries/services.py`: make `_build_data_section` (~l.761) recursive — value → scalar via `_apply_field_transform`; single-object group → dict (omit if optional + all descendants missing, made recursive); repeatable group → list grouped by `group_item_path` index; feed it as `data` into `render()`.
+- [X] T035 [US4] Build the `metadata` context root (tp §6.4): `metadata.id`, `metadata.processed_at`, `metadata.email.{id,received_at,from,to,cc,subject}` from the extraction record + source email; wire delivery to render the body template instead of the fixed envelope for body-carrying methods.
+- [X] T036 [US4] In `client/src/app/documentEntry/` Output Route dialog: show a body-template editor when a body-carrying method (POST/PUT/PATCH) is selected; not required otherwise. Preview/test reuse existing panels (VWE-1521 render path).
 
 **Checkpoint**: A delivered nested payload deep-equals the customer target shape (SC-004); existing routes regression-free.
 
@@ -177,14 +177,14 @@ description: "Task list for Improved Nesting (Arbitrary-Depth Field Groups) — 
 
 ### Tests for User Story 5 ⚠️ (write first, ensure they FAIL)
 
-- [ ] T037 [P] [US5] Backend save-validation test (FR-014): `TemplateSyntaxError` / `UndefinedError` (unresolvable placeholder) → hard error blocks save; rendered output not JSON-parseable → non-blocking warning; valid template leaving fields unreferenced → non-blocking warning, save proceeds.
-- [ ] T038 [P] [US5] Backend test: save-time render uses a mock context seeded with the full runtime key set (`metadata` §6.4 + `data` from configured fields) so `StrictUndefined` catches genuine unknowns but valid `{{ metadata.id }}` / `{{ metadata.email.received_at }}` pass (tp §6.2).
+- [X] T037 [P] [US5] Backend save-validation test (FR-014): `TemplateSyntaxError` / `UndefinedError` (unresolvable placeholder) → hard error blocks save; rendered output not JSON-parseable → non-blocking warning; valid template leaving fields unreferenced → non-blocking warning, save proceeds.
+- [X] T038 [P] [US5] Backend test: save-time render uses a mock context seeded with the full runtime key set (`metadata` §6.4 + `data` from configured fields) so `StrictUndefined` catches genuine unknowns but valid `{{ metadata.id }}` / `{{ metadata.email.received_at }}` pass (tp §6.2).
 
 ### Implementation for User Story 5
 
-- [ ] T039 [US5] In `backend/django/apps/document_entries/serializers.py` (OutputRoute serializer): validate the body template at save via the shared mock-context builder — hard error on `TemplateSyntaxError`/`UndefinedError`; return a non-blocking warning for non-JSON output and for unreferenced configured fields.
-- [ ] T040 [US5] Implement the referenced-variable detector: `jinja2.meta.find_undeclared_variables(env.parse(src))` + AST walk for attribute access on `data`/`metadata` (e.g. `data.CargoLines`, `metadata.email.subject`); a whole-object `{{ data }}` counts every nested field referenced (tp §6.3, Open-item #2: flag referenced node + descendants).
-- [ ] T041 [US5] In `client/src/app/documentEntry/` Output Route dialog: render the helper panel (metadata vars + all groups & fields, highlighted when referenced); non-blocking JSON validation (render mock context → `JSON.parse` → warning if it fails); gate Save only on template validity (syntax / unresolvable placeholder), not JSON validity.
+- [X] T039 [US5] In `backend/django/apps/document_entries/serializers.py` (OutputRoute serializer): validate the body template at save via the shared mock-context builder — hard error on `TemplateSyntaxError`/`UndefinedError`; return a non-blocking warning for non-JSON output and for unreferenced configured fields.
+- [X] T040 [US5] Implement the referenced-variable detector: `jinja2.meta.find_undeclared_variables(env.parse(src))` + AST walk for attribute access on `data`/`metadata` (e.g. `data.CargoLines`, `metadata.email.subject`); a whole-object `{{ data }}` counts every nested field referenced (tp §6.3, Open-item #2: flag referenced node + descendants).
+- [X] T041 [US5] In `client/src/app/documentEntry/` Output Route dialog: render the helper panel (metadata vars + all groups & fields, highlighted when referenced); non-blocking JSON validation (render mock context → `JSON.parse` → warning if it fails); gate Save only on template validity (syntax / unresolvable placeholder), not JSON validity.
 
 **Checkpoint**: All five stories independently functional.
 
@@ -194,8 +194,8 @@ description: "Task list for Improved Nesting (Arbitrary-Depth Field Groups) — 
 
 - [ ] T042 [P] Run the structural quality gate (tp §8 / VWE-1496 fixture-gate pattern): the DLG/TYSON fixture set must pass for correct cargo-line count, correct goods-per-line, zero cross-item leakage, zero invented optional groups — before rollout. Confidence is NOT the gate. Confirm the fixture set (Open-item #3).
 - [ ] T043 [P] Run `quickstart.md` end-to-end walkthrough (author → extract → review → deliver) against a nested Document Type.
-- [ ] T044 Backend lint/format: `ruff check . --fix && ruff format .` from `backend/`; vw-llm-app equivalent.
-- [ ] T045 Full backend + vw-llm-app test suites green via docker compose from `backend/` and vw-llm-app pytest; no `TODO(0)` remaining.
+- [X] T044 Backend lint/format: `ruff check . --fix && ruff format .` from `backend/`; vw-llm-app equivalent.
+- [X] T045 Full backend + vw-llm-app test suites green via docker compose from `backend/` and vw-llm-app pytest; no `TODO(0)` remaining.
 
 ---
 
