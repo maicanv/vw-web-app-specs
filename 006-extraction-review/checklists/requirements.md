@@ -1,7 +1,7 @@
 # Specification Quality Checklist: Extraction Review — Confidence & Control Step
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
-**Created**: 2026-07-06
+**Created**: 2026-07-06 (revalidated 2026-07-07 after source-story revision)
 **Feature**: [spec.md](../spec.md)
 
 ## Content Quality
@@ -31,5 +31,9 @@
 
 ## Notes
 
-- The spec carries 9 deliberately open questions (OQ-1..OQ-3, OQ-5..OQ-10) mirrored from the source Confluence page. The requester asked to keep them open for team discussion, so they are tracked in the Open Questions section rather than as [NEEDS CLARIFICATION] markers. OQ-2 (Needs Review trigger scope) and OQ-5 (reviewer routing axis) affect scope and should be resolved before implementing the affected stories (US1 scenario 2 and US7). Affected requirements reference their OQ inline.
+- The source story was revised on 2026-07-07: all prior open questions are now answered on the Confluence page and folded into the requirements. They are captured in the spec's Resolved Decisions section (D1–D9); no [NEEDS CLARIFICATION] markers or open questions remain.
+- The revision added scope: the Review Records configuration step (US1), the dedicated Needs Review sidebar section (US4), the platform-wide Audit section (US7), and a set of existing-delivery-setting changes (FR-028–FR-031: Resend policy rename, Delivery Mode removal, Record UID, Post-review delivery).
+- Reviewer notifications were dropped from this revision of the story and are recorded as out of scope (A7).
 - REST/API mentions describe the existing delivery capability being reused (context), not new implementation choices.
+- Downstream artifacts (plan.md, research.md, data-model.md, contracts/, quickstart.md) were regenerated on 2026-07-07 to match this revision — the open-question branch strategy was removed (all questions resolved) and the new scope (Review Records config, Needs Review queue, platform Audit, Reviewer role, delivery-setting changes FR-028/029) is reflected.
+- A later same-day amendment dropped the Record UID selection and Post-review delivery method/UID (originally FR-030/031) from scope as too much work for now; a reviewed record is delivered with the route's existing method and UID, unchanged. All artifacts and the technical proposal were updated to match. Ready for /speckit-tasks.

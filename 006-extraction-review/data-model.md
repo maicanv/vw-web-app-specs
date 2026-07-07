@@ -1,30 +1,56 @@
 # Data Model: Extraction Review
 
-**Date**: 2026-07-06 | **Spec**: [spec.md](./spec.md) | **Research**: [research.md](./research.md)
+**Date**: 2026-07-07 (rewritten after source-story revision) | **Spec**: [spec.md](./spec.md) | **Research**: [research.md](./research.md)
 
-Existing models are reused; this feature adds two models and mutates none destructively. Variant parts are tagged with their OQ.
+Two new models, one new pydantic config, column changes on `OutputRoute`, and one auditlog registration. All migrations lossless; the single column drop (`delivery_mode`) is preceded by a behaviour-preserving data migration.
 
-## Existing (unchanged schema, new behaviour)
+## Changed existing models
 
-### ExtractionRecord (`apps/document_entries/models.py`)
-- `overall_confidence: int | None` — now compared against the document type threshold at extraction write-back (OQ-1 governs computation).
-- `status` — `NEEDS_REVIEW` now also set by confidence rules (today: only missing critical fields). Existing `ALLOWED_STATUS_TRANSITIONS` unchanged: `needs_review → {extracted, skipped, rejected}`.
-- `needs_review_reason: str` — now structured/multi-reason capable: newline-joined human-readable reasons ("Overall confidence 61% below threshold 80%", "Field 'IBAN' 42% below threshold", "Confidence unavailable"). Never cleared on transition (feeds FR-012 "originally flagged").
+### DocumentType (`apps/document_entries/models.py`)
 
-### ExtractedFieldValue
-- `raw_value` — becomes the immutable extracted original (write-once, already the convention).
-- `standardized_value` / `display_value` — overwritten by corrections.
-- `is_manually_edited` — set `True` by the correction endpoint (today: dead column).
-- `confidence` — never mutated by corrections (OQ-3 display handled in serializer).
+| Change | Detail |
+|--------|--------|
+| + `review_config` | `SchemaField(schema=ReviewConfig, default=ReviewConfig)` — see below |
+| `global_confidence_threshold` | kept (non-destructive) but no longer read at flag time; data migration seeds `review_config.average_below` from it where set |
 
-### DocumentType / DocumentTypeField
-- `global_confidence_threshold`, `confidence_threshold` — already stored; now enforced. No schema change.
+**ReviewConfig** (new pydantic model, `review_config.py`, mirrors `payload_config.py`):
 
-### RouteDelivery / DeliveryAttempt
-- Unchanged. Re-send after correction rides the existing `ALLOW_RESEND` flow; payload is rebuilt from current field values at send time, so corrected values flow through with zero delivery-side change.
+| Field | Type | Meaning |
+|-------|------|---------|
+| `enabled` | `bool = True` | Review Records toggle (FR-001) |
+| `all_records` | `bool = False` | rule: every record to review |
+| `average_below` | `int \| None` (0–100) | rule: overall (mean) confidence below N |
+| `sender_domains` | `list[str] \| None` | rule: sender's domain in list |
+| `critical_field_below` | `int \| None` (0–100) | rule: any critical-marked field below N |
+| `any_field_below` | `int \| None` (0–100) | rule: any field below N |
 
-### auditlog LogEntry (django-auditlog, already registered)
-- Source for the user-facing audit endpoint. Field-value saves produce before → after diffs; status transitions produce confirm/reject events. Exposed via a record-scoped read-only endpoint (see contracts).
+A rule is enabled when set/true; enabled rules OR-combine (FR-002). Validation: thresholds 0–100; domains normalised lowercase, no `@`.
+
+### OutputRoute
+
+| Change | Detail |
+|--------|--------|
+| `repeat_policy` → `resend_policy` | values `allow` \| `block` (data migration: `allow_resend→allow`, `prevent_duplicates→block`). **Block** = refuse manual re-send of an already successfully delivered record (FR-028) — enforced at resend eligibility, replacing the payload-hash-equality guard |
+| − `delivery_mode` | dropped (FR-029). Data migration first: document types owning a `manual` route get `review_config.all_records = True`; `PENDING_APPROVAL` stays in the status enum for historical rows only |
+
+Record UID selection and a distinct post-review delivery method/UID were dropped from scope (too much work for now). A reviewed (confirmed or corrected) record is delivered through the route's existing payload build and method, unchanged.
+
+### ExtractionRecord — schema unchanged, behaviour changes
+
+- `overall_confidence` — mean of field confidences (D1), now compared against `review_config` rules at extraction write-back.
+- `needs_review_reason` — newline-joined structured reasons ("Overall confidence 61% below threshold 80%", "Field 'IBAN' 42% below threshold 80%", "Confidence unavailable", "Selected for review by Jane Doe"). Never cleared; doubles as the "went through review" marker for the "originally flagged" audit flag.
+
+### ExtractedFieldValue — schema unchanged
+
+- `raw_value` — immutable extracted original (before).
+- `standardized_value` / `display_value` — overwritten by corrections (after).
+- `is_manually_edited` — set `True` by the correction endpoint.
+- `confidence` — never mutated (D4); UI shows the edited badge.
+- **Now `@auditlog.register`ed** (currently unregistered) so corrections yield before → after LogEntry diffs for the Audit section.
+
+### auditlog LogEntry (django-auditlog)
+
+Source for the platform Audit API (`apps/audit`). No org FK → the audit endpoint scopes per subsystem via org-scoped object subqueries (research R6). Subsystem `extraction_records` = LogEntry rows for `ExtractionRecord` + `ExtractedFieldValue`, plus delivery attempts mapped as `resend`.
 
 ## New models
 
@@ -33,47 +59,55 @@ Existing models are reused; this feature adds two models and mutates none destru
 | Field | Type | Notes |
 |-------|------|-------|
 | `organisation` | FK organisations.Organisation | tenant scoping (constitution I) |
-| `document_type` | FK DocumentType, `related_name="reviewer_assignments"` | **OQ-5 seam** — axis A. Option B: replace with FK data_source; Option C: both nullable + CheckConstraint(exactly one); Option D: FK workspace only |
-| `user` | FK users.User | must be an org/workspace member (validated in serializer, A6) |
-| `created_by` | FK users.User | who assigned (audit) |
+| `document_type` | FK DocumentType, `related_name="reviewer_assignments"` | routing axis (D5) |
+| `user` | FK users.User | must be an org/workspace member (A5, serializer-validated) |
+| `created_by` | FK users.User | who assigned |
 | timestamps | BaseModel | |
 
 Constraints: `UniqueConstraint(document_type, user)`. auditlog-registered.
 
-Derived predicate (single seam for OQ-5/OQ-6):
-- `records_for_reviewer(user) -> QuerySet[ExtractionRecord]` — needs_review records of assigned document types; workspace admins/managers additionally see records of document types with **zero** assignments (FR-020).
-- `can_review(user, record) -> bool` — has assignment on the record's document type, or admin/manager fallback per existing document_entries access policy.
+Role linkage (D6, clarification): permission constant `DOCUMENT_RECORDS_REVIEW = "document_records:review"`; org-scoped seeded `Role(identifier="reviewer")` carrying it. First assignment for a user ensures the Reviewer `RoleAssignment`; deleting their last assignment removes it. Role = capability (access policy checks the permission string), assignment = scope (queryset filter).
+
+Derived predicates:
+- `records_for_reviewer(user) -> QuerySet[ExtractionRecord]` — needs_review records of assigned document types; workspace admins/managers additionally see records of document types with **zero** assignments (FR-027).
+- `can_review(user, record) -> bool` — assignment on the record's document type, or admin/manager fallback per existing access policy.
 
 ### ExtractionRecordLock (new, `apps/locks/models.py`, extends `AbstractLock`)
 
 | Field | Type | Notes |
 |-------|------|-------|
 | `resource` | OneToOne ExtractionRecord, `related_name="lock"` | mirrors ApplicationLock pattern |
-| inherited | holder, organisation, key, expiry | from AbstractLock |
+| inherited | holder, organisation, key, `expires_at`, status | from AbstractLock |
 
-- TTL default 15 min, refreshed on save activity (**OQ-8**: hard enforcement = correction endpoint rejects non-holders with 409; soft = UI-only warning; model identical either way).
-- `AbstractAccessOverride` subclass only if takeover proves needed — deferred.
+- **Hard** lock (D7): correct/confirm/reject from non-holders → 409 while `is_locked`. TTL **5 minutes** (`expires_at = now + 5min`), refreshed on save activity.
+- Removing a reviewer's assignments releases their active locks (edge case: reviewer removed mid-edit).
+- `AbstractAccessOverride` subclass deferred until takeover is needed.
 
-## State transitions (unchanged set, new triggers)
+## State transitions
+
+Existing set plus new transitions **into** `needs_review` (R3):
 
 ```
-extracted ──(auto/manual send)──► sent / send_failed
 needs_review ──confirm──► extracted ──► (auto-delivery if routes configured)
-needs_review ──reject───► rejected   (terminal, excluded from delivery)
+needs_review ──reject───► rejected     (reversible; excluded from delivery while rejected)
 needs_review ──skip─────► skipped
+extracted / sent / send_failed ──select for review──► needs_review   (NEW, FR-013)
+rejected ──select for review / re-open──► needs_review               (NEW, clarification Q4)
 ```
 
-New trigger into `needs_review` at extraction write-back, evaluated in order, reasons accumulated:
-1. Missing critical fields (existing rule, unchanged)
-2. Confidence unavailable (`overall_confidence is None`) — FR-004
-3. Overall confidence below document-type threshold — FR-001
-4. Field confidence below threshold, per **OQ-2** predicate (default: critical fields only) — FR-002
+Triggers into `needs_review` at extraction write-back (reasons accumulated, OR):
+1. Missing critical fields (existing rule, kept)
+2. Confidence unavailable (`overall_confidence is None`) — FR-006
+3. Enabled `review_config` rules: all-records, average-below, sender-domain, critical-field-below, any-field-below — FR-002/004
 
-Corrections never change status (**OQ-3** default); Confirm is the only path out of the hold.
+Review disabled (`review_config.enabled = False`) ⇒ no auto-flagging (FR-003); select-for-review still works.
+
+Corrections never change status (D4); Confirm is the only path out of the hold.
 
 ## Validation rules
 
-- Correction payload: values validated against the field's `field_type`/`FieldConfig` (reuse existing field validation from the wizard serializers).
-- Corrections allowed on any record status (FR-008), including `sent`; on non-sent records the record stays/goes eligible per existing `DELIVERABLE_RECORD_STATUSES`.
-- Reviewer assignment: user must belong to the document type's organisation; assigner must hold the document-type manage permission (**OQ-6** default).
-- Lock: corrections by non-holders rejected while an unexpired lock exists (**OQ-8** default hard).
+- Correction payload: values validated against the field's `field_type`/`FieldConfig` (reuse wizard serializers' validation). Allowed on any status, including `sent` (FR-014); unsent corrected records remain/become eligible per `DELIVERABLE_RECORD_STATUSES` (FR-016).
+- ReviewConfig: thresholds 0–100; enabling review with zero rules is valid but flags nothing (warn in UI).
+- Reviewer assignment: user must belong to the document type's organisation; assigner needs `document_types:edit`.
+- Lock: mutations by non-holders rejected (409) while an unexpired lock exists.
+- Resend: manual re-send refused when `resend_policy = block` and the delivery already succeeded (FR-018).

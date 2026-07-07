@@ -1,13 +1,12 @@
 # Implementation Plan: Extraction Review — Confidence & Control Step
 
-**Branch**: `006-extraction-review` | **Date**: 2026-07-06 | **Spec**: [spec.md](./spec.md)
+**Branch**: `006-extraction-review` | **Date**: 2026-07-07 (rewritten after source-story revision) | **Spec**: [spec.md](./spec.md)
 **Input**: Feature specification from `/specs/006-extraction-review/spec.md`
 
 ## Table of Contents
 
 - [Summary](#summary)
 - [Technical Context](#technical-context)
-- [Open-Question Branch Strategy](#open-question-branch-strategy)
 - [Constitution Check](#constitution-check)
 - [Project Structure](#project-structure)
 - [Implementation Phases](#implementation-phases)
@@ -15,51 +14,31 @@
 
 ## Summary
 
-Turn the already-stored confidence thresholds into an enforced review gate: flag low-confidence extraction records as Needs Review with a reason, hold them from delivery until a reviewer confirms/corrects/rejects, let users correct values on any record (before → after, manually-edited marker) and re-send corrected payloads, expose a user-facing audit trail, and (dependent story) assign reviewers per document type with a shared, locked queue and notifications.
+Turn stored confidence data into an enforced, configurable review gate. Admins configure per-document-type review rules in a new **Review Records** wizard step (on/off toggle + OR-combined rules: all records, average below N, sender-domain list, critical field below N, any field below N). Matching records are flagged **Needs Review** with structured reasons and held from delivery until a person Confirms, Corrects, or Rejects. A dedicated **Needs Review** sidebar queue (with pending count and Select-for-review) replaces the list filter. Corrections work on any record (before → after, edited marker, kept confidence) and corrected sent records can be re-sent subject to the route's resend policy. A platform-wide **Audit** section under the Organisation area exposes the extraction-record modification trail. Reviewer assignment adds a dedicated Reviewer role scoped per document type, a shared queue with a hard 5-minute record lock, and an admins/managers fallback for unassigned document types. Two existing delivery settings change: Repeat policy → **Resend policy** (Allow/Block, Block = no re-send after success), and **Delivery Mode removed** (manual = review-all rule). A reviewed (confirmed or corrected) record is delivered with the route's normal method and UID handling, unchanged — Record UID selection and a separate post-review method/UID were dropped from scope as too much work for now.
 
-Most of the machinery exists: status transitions (`needs_review → extracted/rejected/skipped` via `update_status`), delivery with retry/re-send, auditlog registration, per-value confidence, and the `is_manually_edited` column. The build is: flag-rule evaluation at extraction write-back, a correction endpoint, an audit read endpoint, serializer/UI surfacing, and the `ReviewerAssignment` + `ExtractionRecordLock` models.
-
-The spec's open questions are resolved tomorrow; this plan isolates each behind a narrow code seam with a stated default so the chosen branch is kept and the rest deleted — see [Open-Question Branch Strategy](#open-question-branch-strategy) and [research.md](./research.md).
+All previous open questions are resolved (spec D1–D9 + Clarifications); the prior plan's OQ branch seams are gone. Reviewer notifications are out of scope (A7). Design decisions and code grounding live in [research.md](./research.md).
 
 ## Technical Context
 
 **Language/Version**: Python 3.12 (Django 4.2 + DRF), TypeScript / React 18 (Vite, Mantine, TanStack Query)
-**Primary Dependencies**: DRF, django-auditlog (already registered on the affected models), django-filter, `apps/locks` (AbstractLock), existing async task path (RabbitMQ) for notifications
-**Storage**: PostgreSQL — 2 new tables (`ReviewerAssignment`, `ExtractionRecordLock`), no destructive migrations
+**Primary Dependencies**: DRF, django-pydantic-field (`SchemaField` for ReviewConfig), django-auditlog (extend registration to `ExtractedFieldValue`), django-filter, `apps/locks` (AbstractLock), `apps/roles` (dynamic Role + RoleAssignment)
+**Storage**: PostgreSQL — 2 new tables (`ReviewerAssignment`, `ExtractionRecordLock`), a renamed column on `OutputRoute` (resend_policy) and a new column on `DocumentType` (review_config), one column drop (`delivery_mode`) preceded by a behaviour-preserving data migration
 **Testing**: pytest via `docker compose exec django pytest` (run from `backend/`); no frontend tests unless asked
 **Target Platform**: existing Docker Compose stack (Django :8001, client :5173)
-**Project Type**: web application (Django backend + React client), extending `backend/django/apps/document_entries` and `client/src/app/documentEntry`
-**Performance Goals**: flag evaluation is O(fields) at extraction write-back — negligible; queue filter is one indexed join
-**Constraints**: no breaking API changes (additive endpoints/fields only); org/tenant scoping on every new query; LLM-side (vw-llm-app) is untouched — confidence already arrives per field
-**Scale/Scope**: ~6 backend endpoints (2 new, 4 extended), 2 models, 1 service-layer rule function, UI deltas on 2 existing pages + document-type config
-
-## Open-Question Branch Strategy
-
-Per-OQ option matrices with common core, deltas, defaults, and code seams live in [research.md](./research.md). Summary of seams:
-
-| OQ | Topic | Seam (single change point) | Default until meeting |
-|----|-------|---------------------------|----------------------|
-| OQ-1 | Overall confidence formula | `compute_overall_confidence()` in services.py | keep mean |
-| OQ-2 | Flag on any field vs critical | predicate in `evaluate_needs_review()` | critical only |
-| OQ-3 | Edited-value confidence / auto-clear | detail serializer + correct endpoint | keep score + badge; explicit Confirm |
-| OQ-5 | Reviewer routing axis | `ReviewerAssignment` FK + `records_for_reviewer()` | document type |
-| OQ-6 | Role vs capability | `can_review()` predicate | assignment = capability |
-| OQ-7 | Email cadence | `notify_reviewers()` body | immediate, throttled per reviewer |
-| OQ-8 | Lock hardness/timeout | guard in correct endpoint; TTL constant | hard, 15 min |
-| OQ-9 | Round-robin | none needed (layers on later) | out of scope |
-| OQ-10 | Bulk-assign | additive endpoint | defer |
-
-Rule for task generation (`/speckit-tasks`): tasks touching a seam carry the OQ tag; everything else is common core and unblocked. After the meeting, update the Default column + research.md, drop non-chosen deltas, and only OQ-tagged tasks get revised.
+**Project Type**: web application, extending `backend/django/apps/document_entries`, `apps/locks`, a new thin `apps/audit`, and `client/src/app/documentEntry` + layout/org area
+**Performance Goals**: flag evaluation is O(fields) at extraction write-back; queue + count are single indexed queries through `records_for_reviewer`
+**Constraints**: API changes additive except two coordinated renames/removals consumed only by our own client (`repeat_policy`→`resend_policy`, `delivery_mode` dropped) — client ships from the same repo, lossless data migrations; org/tenant scoping on every new query incl. the LogEntry-based audit endpoint; vw-llm-app untouched (confidence already arrives per field)
+**Scale/Scope**: ~7 backend endpoint changes (3 new: audit list, reviewers sub-resource, claim; 4 extended: update_status transitions, correct action, queue filter/count, route serializers), 2 new models, 1 SchemaField config, 1 service-layer rule function, UI: 1 new wizard step, 1 new sidebar queue page, 1 new org-area Audit page, deltas on records list/detail and OutputRouteForm
 
 ## Constitution Check
 
 *GATE: evaluated against constitution v5.1.2 — PASS (pre-research and post-design).*
 
-- **I. Protect Sensitive Data**: PASS — all new queries org-scoped (ReviewerAssignment carries `organisation`; queue predicate filters through existing org-scoped querysets). Audit endpoint exposes only same-org records via the existing access policy. No new PII stores; extracted values already exist.
-- **II. Respect the Architecture**: PASS — extends `document_entries` app patterns (viewset `@action`s, service-layer rules, decorators/exceptions map), reuses `apps/locks` AbstractLock and auditlog instead of inventing parallel mechanisms. New pattern introduced: none.
-- **III. Test What Matters**: PASS — tests target behaviour: flag rules, correction + lock conflicts, queue visibility/fallback, audit mapping. No frontend tests (user preference).
-- **IV. Ship Incrementally; Enterprise-Grade**: PASS — user stories are independently shippable in spec priority order; all API changes additive (no versioning needed); OQ seams exist for decision stability, not speculative abstraction (each is a single function/field, justified by the scheduled decision meeting).
-- **V. Make Failures Visible**: PASS — flag evaluation and notifications run in the existing async paths already wired to Sentry; delivery failure surfacing unchanged.
+- **I. Protect Sensitive Data**: PASS — every new query org-scoped: `ReviewerAssignment` carries `organisation`; queue predicate runs through existing org-scoped querysets; the audit endpoint scopes `LogEntry` per subsystem via org-scoped object subqueries (LogEntry has no org FK — this is the one place scoping is constructed, called out in research R6 and tested explicitly). Registering `ExtractedFieldValue` with auditlog stores values already visible in the product; no new PII class.
+- **II. Respect the Architecture**: PASS — follows established patterns: `SchemaField` config (as `PayloadConfig`), `AbstractLock` subclass (as `ApplicationLock`), dynamic Role + permission-string access policies, viewset `@action`s. One new pattern: a platform-wide audit read API over auditlog (`apps/audit`) — no prior art in the repo; approach agreed here in the plan phase per constitution II (thin read-only viewset, subsystem registry, org-scoping rule per subsystem).
+- **III. Test What Matters**: PASS — tests target behaviour: rule evaluation incl. OR combination and confidence-unavailable, hold gating, new transitions (select-for-review, reject re-open), correction + lock conflict (409), resend-policy block, delivery-mode migration outcome, queue visibility + zero-assignment fallback, audit org-scoping and action mapping. No frontend tests (user preference).
+- **IV. Ship Incrementally; Enterprise-Grade**: PASS — user stories ship independently in spec priority order. The two non-additive API changes (rename/removal) are consumed only by the same-repo client and land with lossless data migrations in the same deploy; noted here per constitution IV. The delivery-mode drop is preceded by a data migration that preserves manual-route behaviour via the review-all rule.
+- **V. Make Failures Visible**: PASS — flag evaluation runs in the existing extraction write-back path already wired to Sentry; delivery failure surfacing unchanged; no new background jobs (notifications dropped).
 
 **Agent autonomy**: no git operations without explicit per-operation request; migrations require user confirmation before running.
 
@@ -70,7 +49,7 @@ Rule for task generation (`/speckit-tasks`): tasks touching a seam carry the OQ 
 ```text
 specs/006-extraction-review/
 ├── plan.md              # This file
-├── research.md          # Phase 0 — OQ option matrices + as-built baseline
+├── research.md          # Phase 0 — decisions R1–R10 + as-built baseline
 ├── data-model.md        # Phase 1 — entities, transitions, validation
 ├── quickstart.md        # Phase 1 — run/verify/test
 ├── contracts/
@@ -82,44 +61,60 @@ specs/006-extraction-review/
 
 ```text
 backend/django/apps/document_entries/
-├── models.py                        # + ReviewerAssignment
-├── enums.py                         # (transitions unchanged)
-├── services.py                      # + compute_overall_confidence, evaluate_needs_review, notify_reviewers
-├── serializers.py                   # + correction, audit, reviewers, lock/threshold surfacing
-├── extraction_record_view_set.py    # + correct/, audit/, claim/, my_queue filter, queue count
-├── document_type_view_set.py        # + reviewers/ sub-resource
-├── filters.py                       # + my_queue predicate
-└── migrations/                      # + ReviewerAssignment
+├── models.py                        # + DocumentType.review_config; + ReviewerAssignment;
+│                                    #   OutputRoute: repeat_policy→resend_policy, −delivery_mode;
+│                                    #   auditlog.register(ExtractedFieldValue)
+├── review_config.py                 # ReviewConfig pydantic model (new, mirrors payload_config.py)
+├── enums.py                         # RepeatPolicy→ResendPolicy(allow|block); −DeliveryMode;
+│                                    #   ALLOWED_STATUS_TRANSITIONS += {extracted,rejected,sent,send_failed}→needs_review
+├── services.py                      # + compute_overall_confidence, evaluate_needs_review (R2);
+│                                    #   deliver(): resend-policy at eligibility; drop MANUAL parking
+├── serializers.py                   # + correction, reviewers, lock/threshold surfacing, route setting fields
+├── extraction_record_view_set.py    # + correct/, claim (or locks route), review_queue filter + count action
+├── document_type_view_set.py        # + reviewers/ sub-resource; review_config in payload
+├── filters.py                       # + review_queue predicate (records_for_reviewer)
+└── migrations/                      # schema + data migrations (seed avg rule; manual-route→review-all; policy rename)
 
 backend/django/apps/locks/
-└── models.py                        # + ExtractionRecordLock(AbstractLock)
+└── models.py                        # + ExtractionRecordLock(AbstractLock), TTL 5 min
 
-backend/django/tests/test_apps/test_document_entries/
-└── (new test modules per behaviour area)
+backend/django/apps/audit/           # NEW thin app: LogEntry read API (R6)
+├── views.py / serializers.py / urls.py / subsystems.py
 
+backend/django/common/constants/permissions.py   # + DOCUMENT_RECORDS_REVIEW
+backend/django/common/access_policy/document_entry_type_access_policy.py  # reviewer statements
+backend/django/tests/test_apps/test_document_entries/  # behaviour tests (+ test_apps/test_audit/)
+
+client/src/app/layout/DefaultNav.tsx                   # + Needs Review entry (badge); + org-area Audit entry
 client/src/app/documentEntry/
-├── records/ExtractionRecordListPage.tsx   # my-queue filter + pending count
-├── records/ExtractionRecordDetailPage.tsx # review actions, blocked-send explainer, audit tab, lock banner
-├── records/FieldTable.tsx                 # inline correction, before→after, edited badge, threshold highlight
-└── documentType wizard/config             # threshold input surfacing + reviewers management (US7)
+├── documentTypes/DocumentTypeCreatePage.tsx + steps/  # + Review Records step (stepper indices, validateStep)
+├── records/NeedsReviewPage.tsx                        # queue page (reuses list components)
+├── records/components/RecordFilters.tsx               # − needs_review status option
+├── records/ExtractionRecordDetailPage.tsx             # review actions, blocked-send explainer, lock banner,
+│                                                      #   select-for-review, threshold highlight (FieldTable)
+├── records/FieldTable.tsx                             # inline correction, before→after, edited badge
+└── components/OutputRouteForm.tsx                     # resend policy, −delivery mode
+client/src/app/audit/AuditPage.tsx                     # org-area audit surface (subsystem filter)
 ```
 
-**Structure Decision**: extend the existing `document_entries` Django app and `documentEntry` client module in place; the only cross-app touch is one model in `apps/locks` following its established subclass pattern. vw-llm-app is untouched.
+**Structure Decision**: extend `document_entries` and the `documentEntry` client module in place; `apps/locks` gains one model per its subclass pattern; the platform-wide audit surface gets its own thin `apps/audit` app because it is deliberately not a document-entries concern (subsystems are pluggable, A8). vw-llm-app untouched.
 
 ## Implementation Phases
 
 Build order follows spec story priorities; each phase ships independently.
 
-1. **Flagging (US1)** — extract `compute_overall_confidence` [OQ-1], add `evaluate_needs_review` with the four rules (missing-critical kept, unavailable, overall, per-field [OQ-2]) at extraction write-back; structured reasons; tests.
-2. **Hold + review actions (US2)** — hold already falls out of existing delivery gating (`DELIVERABLE_STATUSES` excludes needs_review) → verify + test; surface Confirm/Reject (existing `update_status`) and blocked-send explanation in the detail UI.
-3. **Correction (US3)** — `correct/` endpoint (validation, `is_manually_edited`, before → after from `raw_value`) [OQ-3]; inline edit UI in FieldTable.
-4. **Re-send (US4)** — verify corrected payload flows through existing re-send; add test; UI affordance already exists.
-5. **Audit (US5)** — `audit/` endpoint mapping auditlog entries to actions; history tab in detail page.
-6. **UI signaling (US6)** — `applied_threshold` + `below_threshold` in detail serializer; highlight + recommendation banner.
-7. **Reviewer assignment (US7)** — `ReviewerAssignment` model + `reviewers/` sub-resource [OQ-5, OQ-6]; `my_queue` filter + count; `ExtractionRecordLock` + `claim/` [OQ-8]; `notify_reviewers` [OQ-7]; config UI + queue UI.
+1. **Review configuration (US1, FR-001..003)** — `ReviewConfig` SchemaField + serializer surface + data migration seeding `average_below` from `global_confidence_threshold`; Review Records wizard step (stepper indices, validation); tests for persistence and defaults.
+2. **Flagging (US2, FR-004..007)** — `compute_overall_confidence` extraction; `evaluate_needs_review` with OR-combined rules + missing-critical + confidence-unavailable, structured reasons at extraction write-back; tests per rule and combination.
+3. **Hold + review actions (US3, FR-008..010)** — hold falls out of existing `DELIVERABLE_STATUSES` gating → verify + test; Confirm/Reject via existing `update_status`; blocked-send explainer in detail UI.
+4. **Needs Review queue (US4, FR-011..013)** — new transitions into `needs_review` (select-for-review, reject re-open); `review_queue` filter + count endpoint; sidebar entry + queue page; remove the list filter option.
+5. **Correction (US5, FR-014..016)** — `correct/` endpoint (validation per FieldConfig, `is_manually_edited`, before → after from `raw_value`, never touches status); auditlog registration of `ExtractedFieldValue`; inline edit UI in FieldTable.
+6. **Re-send + delivery-setting changes (US6, FR-017/018, FR-028/029)** — resend-policy rename + Block semantics at resend eligibility; delivery-mode removal with behaviour-preserving data migration; OutputRouteForm updates; delivery tests. Reviewed records reuse the route's normal delivery method and UID unchanged.
+7. **Audit (US7, FR-019..021)** — `apps/audit` read API over LogEntry with subsystem registry + org scoping; org-area Audit page with subsystem filter; action-mapping serializer tests incl. org isolation.
+8. **UI signalling (US8, FR-022)** — `applied_threshold` + per-value `below_threshold` in detail serializer; highlight + recommendation banner.
+9. **Reviewer assignment (US9, FR-023..027)** — `DOCUMENT_RECORDS_REVIEW` permission + seeded Reviewer role; `ReviewerAssignment` + `reviewers/` sub-resource; `records_for_reviewer` queue scoping + zero-assignment fallback; `ExtractionRecordLock` (hard, 5 min) + claim/release + 409 guards; config UI + lock banner.
 
-Phases 1–6 have no dependency on tomorrow's meeting beyond seam defaults (OQ-1/2/3 are body-level swaps). Phase 7 is where OQ-5/6 could reshape a model — schedule its implementation after the meeting; its design is still fully plannable now (all options share the queue/permission/notification core).
+Dependencies: 2→1 (rules read config), 3→2, 4→2, 6's post-review bits→2 (needs the flag marker), 7→3/5 (needs actions to audit), 9→4 (scopes the queue). 5 and 8 are independent after 2.
 
 ## Complexity Tracking
 
-No constitution violations to justify. The OQ seams are single functions/fields with a stated default, not speculative abstraction layers.
+No constitution violations to justify. The one new pattern (platform audit read API) is declared in the Constitution Check; everything else reuses existing patterns. The two non-additive API changes are same-repo-client-only, with lossless data migrations.
