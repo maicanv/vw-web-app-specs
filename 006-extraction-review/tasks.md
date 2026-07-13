@@ -65,7 +65,7 @@ description: "Task list for Extraction Review — Confidence & Control Step"
 - [ ] T004 Rename `OutputRoute.repeat_policy` → `resend_policy`, add `ResendPolicy` choices (`allow`, `block`) replacing `RepeatPolicy` in `backend/django/apps/document_entries/enums.py`, and update the field in `backend/django/apps/document_entries/models.py`
 - [ ] T005 Run `docker compose exec django python manage.py makemigrations document_entries` for T003/T004 (schema migration adding `review_config`, renaming `repeat_policy`→`resend_policy` with a values-preserving `RunPython` data step `allow_resend→allow`, `prevent_duplicates→block`) — **stop and get user confirmation before running `migrate`**
 - [ ] T006 [P] Add a data migration in `backend/django/apps/document_entries/migrations/` seeding `review_config.average_below` from `DocumentType.global_confidence_threshold` where set (reverse operation: no-op restore, since the source column is untouched) — **user-confirmed migrate**
-- [ ] T007 [P] Add `DOCUMENT_RECORDS_REVIEW = "document_records:review"` to `backend/django/common/constants/permissions.py` under a new "Document Records Review Permissions" section
+- [ ] T007 [P] Add `DOCUMENT_ENTRIES_REVIEW = "document_entries:review"` to `backend/django/common/constants/permissions.py` under a new "Document Entries Review Permissions" section
 - [ ] T008 [P] Add `ExtractionRecordLock(AbstractLock)` in `backend/django/apps/locks/models.py`: `resource = models.OneToOneField("document_entries.ExtractionRecord", on_delete=models.CASCADE, related_name="lock")`, `UniqueConstraint(fields=["organisation", "holder", "resource"], name="unique_extraction_record_lock")`, `@auditlog.register(exclude_fields=["key", "created_at", "updated_at"])` — mirrors `ApplicationLock`
 - [ ] T009 Run `docker compose exec django python manage.py makemigrations locks` for T008 — **user-confirmed migrate**
 - [ ] T010 [P] Register `ExtractedFieldValue` with `django-auditlog` in `backend/django/apps/document_entries/models.py` (`@auditlog.register(exclude_fields=[...])` above the class, excluding write-once snapshot fields per the model's existing `Meta` comment: `field_codename`, `field_name`, `field_type`, `is_critical`, `display_order`, `created_at`, `updated_at`)
@@ -92,7 +92,7 @@ description: "Task list for Extraction Review — Confidence & Control Step"
 - [ ] T015 [US1] Rename `client/src/app/documentEntry/documentTypes/steps/ConfidenceStep.tsx` to `ReviewRecordsStep.tsx` (avoids collision with the existing `ReviewStep.tsx` final wizard step) and implement the toggle + six rule inputs (thresholds via `NumberInput`, `sender_domains` via a tags input, and "specific fields below N" via a `NumberInput` + `MultiSelect` sourced from the wizard's in-progress field list, excluding boolean/group field types), wired to `review_config` on the form
 - [ ] T016 [US1] Register `ReviewRecordsStep` in the stepper in `client/src/app/documentEntry/documentTypes/DocumentTypeCreatePage.tsx` (import, add to the steps array, bump `STEPS_WITHOUT_OUTPUT` / `STEPS_WITH_OUTPUT`, extend `validateStep` in `client/src/app/documentEntry/documentTypes/documentTypeFormValidation.ts` for threshold bounds)
 - [ ] T017 [US1] Add `review_config` to the document-type form types/payload in `client/src/app/documentEntry/documentTypes/useDocumentTypeForm.ts` (or the equivalent form-state file) and `buildSavePayload` in `DocumentTypeCreatePage.tsx`
-- [ ] T018 [US1] Fill new i18n keys with the English value in every `client/src/translations/*.json` locale file per project convention (never translate secondary language files; fill markers with the English value as-is)
+- [ ] T018 [US1] Add new i18n keys to `client/src/translations/en.json` only, per project convention — do not add or fill them in the secondary locale files (they are translated later in bulk)
 
 **Checkpoint**: Review Records step is fully functional and independently testable — config saves and loads.
 
@@ -271,7 +271,7 @@ description: "Task list for Extraction Review — Confidence & Control Step"
 
 - [ ] T067 [P] [US9] Add `ReviewerAssignment` model (`organisation` FK, `document_type` FK `related_name="reviewer_assignments"`, `user` FK, `created_by` FK, `UniqueConstraint(document_type, user)`, auditlog-registered) in `backend/django/apps/document_entries/models.py`
 - [ ] T068 Run `docker compose exec django python manage.py makemigrations document_entries` for T067 — **user-confirmed migrate**
-- [ ] T069 [US9] Add a data migration/fixture seeding an org-scoped `Role(identifier="reviewer", permissions=[DOCUMENT_RECORDS_REVIEW])` per organisation (or a signal on organisation creation, matching how other seeded roles are created) — **user-confirmed migrate**
+- [ ] T069 [US9] Add a data migration/fixture seeding an org-scoped `Role(identifier="reviewer", permissions=[DOCUMENT_ENTRIES_REVIEW])` per organisation (or a signal on organisation creation, matching how other seeded roles are created) — **user-confirmed migrate**
 - [ ] T070 [US9] Add `save`/`delete` signal handling in `backend/django/apps/document_entries/signals.py` (or a service method) so a user's first `ReviewerAssignment` grants the Reviewer `RoleAssignment` and their last removal revokes it
 - [ ] T071 [US9] Implement `records_for_reviewer(user)` and `can_review(user, record)` in `backend/django/apps/document_entries/services.py`: assigned document types' `needs_review` records, plus (for users with `document_types:edit` acting as admin/manager) document types with zero `ReviewerAssignment` rows
 - [ ] T072 [US9] Wire `records_for_reviewer` into the `review_queue` filter from T031 in `backend/django/apps/document_entries/filters.py`, replacing the Phase 6 placeholder scoping
@@ -290,7 +290,7 @@ description: "Task list for Extraction Review — Confidence & Control Step"
 
 **Purpose**: Final validation across all stories.
 
-- [ ] T079 [P] Fill any remaining new i18n keys with the English value in every `client/src/translations/*.json` locale file
+- [ ] T079 [P] Add any remaining new i18n keys to `client/src/translations/en.json` only (secondary locale files are translated later in bulk — leave untouched)
 - [ ] T080 Run the full behaviour suite: `docker compose exec django pytest tests/test_apps/test_document_entries/ tests/test_apps/test_audit/ -x -q` from `backend/`
 - [ ] T081 Walk through [quickstart.md](./quickstart.md)'s "Exercise the feature" steps end-to-end against a running stack
 

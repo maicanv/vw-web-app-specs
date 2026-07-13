@@ -40,7 +40,7 @@ Record UID selection and a distinct post-review delivery method/UID were dropped
 ### ExtractionRecord — schema unchanged, behaviour changes
 
 - `overall_confidence` — mean of field confidences (D1), now compared against `review_config` rules at extraction write-back.
-- `needs_review_reason` — newline-joined structured reasons ("Overall confidence 61% below threshold 80%", "Field 'IBAN' 42% below threshold 80%", "Confidence unavailable", "Selected for review by Jane Doe"). Never cleared; doubles as the "went through review" marker for the "originally flagged" audit flag.
+- `needs_review_reason` — newline-joined structured reasons ("Overall confidence 61% below threshold 80%", "Field 'IBAN' 42% below threshold 80%", "Confidence unavailable", "Selected for review by Jane Doe"). Never cleared. The audit "originally flagged" marker is **not** a non-empty check on this text (that would count manual "Selected for review by …" entries); it is true only when `evaluate_needs_review` recorded at least one automatic-rule reason at write-back — a machine-readable check, not a substring scan.
 
 ### ExtractedFieldValue — schema unchanged
 
@@ -68,7 +68,7 @@ Source for the platform Audit API (`apps/audit`). No org FK → the audit endpoi
 
 Constraints: `UniqueConstraint(document_type, user)`. auditlog-registered.
 
-Role linkage (D6, clarification): permission constant `DOCUMENT_RECORDS_REVIEW = "document_records:review"`; org-scoped seeded `Role(identifier="reviewer")` carrying it. First assignment for a user ensures the Reviewer `RoleAssignment`; deleting their last assignment removes it. Role = capability (access policy checks the permission string), assignment = scope (queryset filter).
+Role linkage (D6, clarification): permission constant `DOCUMENT_ENTRIES_REVIEW = "document_entries:review"`; org-scoped seeded `Role(identifier="reviewer")` carrying it. First assignment for a user ensures the Reviewer `RoleAssignment`; deleting their last assignment removes it. Role = capability (access policy checks the permission string), assignment = scope (queryset filter).
 
 Derived predicates:
 - `records_for_reviewer(user) -> QuerySet[ExtractionRecord]` — needs_review records of assigned document types; workspace admins/managers additionally see records of document types with **zero** assignments (FR-027).

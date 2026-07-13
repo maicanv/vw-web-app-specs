@@ -82,7 +82,7 @@ backend/django/apps/locks/
 backend/django/apps/audit/           # NEW thin app: LogEntry read API (R6)
 ├── views.py / serializers.py / urls.py / subsystems.py
 
-backend/django/common/constants/permissions.py   # + DOCUMENT_RECORDS_REVIEW
+backend/django/common/constants/permissions.py   # + DOCUMENT_ENTRIES_REVIEW
 backend/django/common/access_policy/document_entry_type_access_policy.py  # reviewer statements
 backend/django/tests/test_apps/test_document_entries/  # behaviour tests (+ test_apps/test_audit/)
 
@@ -112,7 +112,7 @@ Build order follows spec story priorities; each phase ships independently.
 6. **Re-send + delivery-setting changes (US6, FR-017/018, FR-028/029)** — resend-policy rename + Block semantics at resend eligibility; delivery-mode removal with behaviour-preserving data migration; OutputRouteForm updates; delivery tests. Reviewed records reuse the route's normal delivery method and UID unchanged.
 7. **Audit (US7, FR-019..021)** — `apps/audit` read API over LogEntry with subsystem registry + org scoping; org-area Audit page with subsystem filter; action-mapping serializer tests incl. org isolation.
 8. **UI signalling (US8, FR-022)** — `applied_threshold` + per-value `below_threshold` in detail serializer; highlight + recommendation banner.
-9. **Reviewer assignment (US9, FR-023..027)** — `DOCUMENT_RECORDS_REVIEW` permission + seeded Reviewer role; `ReviewerAssignment` + `reviewers/` sub-resource; `records_for_reviewer` queue scoping + zero-assignment fallback; `ExtractionRecordLock` (hard, 5 min) + claim/release + 409 guards; config UI + lock banner.
+9. **Reviewer assignment (US9, FR-023..027)** — `DOCUMENT_ENTRIES_REVIEW` permission + seeded Reviewer role; `ReviewerAssignment` + `reviewers/` sub-resource; `records_for_reviewer` queue scoping + zero-assignment fallback; `ExtractionRecordLock` (hard, 5 min) + claim/release + 409 guards; config UI + lock banner.
 
 Dependencies: 2→1 (rules read config), 3→2, 4→2, 6's post-review bits→2 (needs the flag marker), 7→3/5 (needs actions to audit), 9→4 (scopes the queue). 5 and 8 are independent after 2.
 
