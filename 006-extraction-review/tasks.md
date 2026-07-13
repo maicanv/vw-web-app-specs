@@ -60,7 +60,7 @@ description: "Task list for Extraction Review — Confidence & Control Step"
 
 **⚠️ CRITICAL**: Do not start Phase 3+ until migrations in this phase are generated, reviewed, and the user has confirmed running them.
 
-- [ ] T002 [P] Add `ReviewConfig` pydantic model (`enabled: bool = True`, `all_records: bool = False`, `average_below: int | None`, `sender_domains: list[str] | None`, `critical_field_below: int | None`, `any_field_below: int | None`) in new file `backend/django/apps/document_entries/review_config.py`, mirroring `payload_config.py`'s style
+- [ ] T002 [P] Add `ReviewConfig` pydantic model (`enabled: bool = True`, `all_records: bool = False`, `average_below: int | None`, `sender_domains: list[str] | None`, `critical_field_below: int | None`, `any_field_below: int | None`, `specific_fields_below: int | None`, `specific_fields: list[str] | None`) in new file `backend/django/apps/document_entries/review_config.py`, mirroring `payload_config.py`'s style; validate `specific_fields_below` requires a non-empty `specific_fields`
 - [ ] T003 Add `DocumentType.review_config = SchemaField(schema=ReviewConfig, default=ReviewConfig)` in `backend/django/apps/document_entries/models.py` (depends on T002)
 - [ ] T004 Rename `OutputRoute.repeat_policy` → `resend_policy`, add `ResendPolicy` choices (`allow`, `block`) replacing `RepeatPolicy` in `backend/django/apps/document_entries/enums.py`, and update the field in `backend/django/apps/document_entries/models.py`
 - [ ] T005 Run `docker compose exec django python manage.py makemigrations document_entries` for T003/T004 (schema migration adding `review_config`, renaming `repeat_policy`→`resend_policy` with a values-preserving `RunPython` data step `allow_resend→allow`, `prevent_duplicates→block`) — **stop and get user confirmation before running `migrate`**
@@ -77,19 +77,19 @@ description: "Task list for Extraction Review — Confidence & Control Step"
 
 ## Phase 3: User Story 1 - Configure which records go to review (Priority: P1) 🎯 MVP
 
-**Goal**: An admin can toggle review on/off for a document type and enable any combination of five OR-combined flag rules.
+**Goal**: An admin can toggle review on/off for a document type and enable any combination of six OR-combined flag rules.
 
 **Independent Test**: Open a document type's Review Records step, toggle review on, enable "average confidence below N", save, and verify the setting persists and reads back correctly via `GET /document-types/{id}/`.
 
 ### Tests for User Story 1
 
-- [ ] T012 [P] [US1] Test `review_config` persistence and defaults (`enabled=True` on a fresh document type) in `backend/django/tests/test_apps/test_document_entries/test_document_type_viewset.py`
+- [ ] T012 [P] [US1] Test `review_config` persistence and defaults (`enabled=True` on a fresh document type), plus `specific_fields_below` validation (rejects an empty `specific_fields` list, rejects a field id from another document type) in `backend/django/tests/test_apps/test_document_entries/test_document_type_viewset.py`
 - [ ] T013 [P] [US1] Test the `average_below` seeding migration converts an existing `global_confidence_threshold` value correctly in a new `backend/django/tests/test_apps/test_document_entries/test_migrations.py`
 
 ### Implementation for User Story 1
 
-- [ ] T014 [US1] Add `review_config` to `DocumentTypeSerializer` / `DocumentTypeUpdateSerializer` in `backend/django/apps/document_entries/serializers.py`, validating thresholds 0–100 and lower-casing/stripping `@` from `sender_domains` entries
-- [ ] T015 [US1] Rename `client/src/app/documentEntry/documentTypes/steps/ConfidenceStep.tsx` to `ReviewRecordsStep.tsx` (avoids collision with the existing `ReviewStep.tsx` final wizard step) and implement the toggle + five rule inputs (thresholds via `NumberInput`, `sender_domains` via a tags input), wired to `review_config` on the form
+- [ ] T014 [US1] Add `review_config` to `DocumentTypeSerializer` / `DocumentTypeUpdateSerializer` in `backend/django/apps/document_entries/serializers.py`, validating thresholds 0–100, lower-casing/stripping `@` from `sender_domains` entries, and validating `specific_fields` ids belong to this document type and to a confidence-bearing field type
+- [ ] T015 [US1] Rename `client/src/app/documentEntry/documentTypes/steps/ConfidenceStep.tsx` to `ReviewRecordsStep.tsx` (avoids collision with the existing `ReviewStep.tsx` final wizard step) and implement the toggle + six rule inputs (thresholds via `NumberInput`, `sender_domains` via a tags input, and "specific fields below N" via a `NumberInput` + `MultiSelect` sourced from the wizard's in-progress field list, excluding boolean/group field types), wired to `review_config` on the form
 - [ ] T016 [US1] Register `ReviewRecordsStep` in the stepper in `client/src/app/documentEntry/documentTypes/DocumentTypeCreatePage.tsx` (import, add to the steps array, bump `STEPS_WITHOUT_OUTPUT` / `STEPS_WITH_OUTPUT`, extend `validateStep` in `client/src/app/documentEntry/documentTypes/documentTypeFormValidation.ts` for threshold bounds)
 - [ ] T017 [US1] Add `review_config` to the document-type form types/payload in `client/src/app/documentEntry/documentTypes/useDocumentTypeForm.ts` (or the equivalent form-state file) and `buildSavePayload` in `DocumentTypeCreatePage.tsx`
 - [ ] T018 [US1] Fill new i18n keys with the English value in every `client/src/translations/*.json` locale file per project convention (never translate secondary language files; fill markers with the English value as-is)
@@ -107,12 +107,12 @@ description: "Task list for Extraction Review — Confidence & Control Step"
 ### Tests for User Story 2
 
 - [ ] T019 [P] [US2] Unit tests for `compute_overall_confidence` (mean of field confidences, `None` when no scorable fields) in `backend/django/tests/test_apps/test_document_entries/test_services.py`
-- [ ] T020 [P] [US2] Unit tests for `evaluate_needs_review`: each rule independently, OR combination across multiple enabled rules, confidence-unavailable reason, boundary case (`confidence == threshold` does not flag), `review_config.enabled=False` → no auto-flag, in `backend/django/tests/test_apps/test_document_entries/test_services.py`
+- [ ] T020 [P] [US2] Unit tests for `evaluate_needs_review`: each rule independently (incl. specific-fields-below with 1 and 2+ selected fields, and a case where a non-selected field is below N but does not flag), OR combination across multiple enabled rules, confidence-unavailable reason, boundary case (`confidence == threshold` does not flag), `review_config.enabled=False` → no auto-flag, in `backend/django/tests/test_apps/test_document_entries/test_services.py`
 
 ### Implementation for User Story 2
 
 - [ ] T021 [US2] Extract the existing inline confidence-mean calculation into `compute_overall_confidence(field_values) -> int | None` in `backend/django/apps/document_entries/services.py`
-- [ ] T022 [US2] Implement `evaluate_needs_review(record, field_values, review_config) -> list[str]` in `backend/django/apps/document_entries/services.py`: OR-combines missing-critical-fields (existing rule), confidence-unavailable, and the five `review_config` rules; returns human-readable reasons (e.g. `"Overall confidence 61% below threshold 80%"`, `"Field 'IBAN' 42% below threshold 80%"`, `"Confidence unavailable"`)
+- [ ] T022 [US2] Implement `evaluate_needs_review(record, field_values, review_config) -> list[str]` in `backend/django/apps/document_entries/services.py`: OR-combines missing-critical-fields (existing rule), confidence-unavailable, and the six `review_config` rules (incl. specific-fields-below, checking each `field_values` entry whose `field_id` is in `review_config.specific_fields`); returns human-readable reasons (e.g. `"Overall confidence 61% below threshold 80%"`, `"Field 'IBAN' 42% below threshold 80%"`, `"Confidence unavailable"`)
 - [ ] T023 [US2] Call `evaluate_needs_review` at extraction write-back (where the missing-critical-fields check currently fires) in `backend/django/apps/document_entries/services.py`; join returned reasons with `\n` into `ExtractionRecord.needs_review_reason` and set `status = needs_review` when non-empty
 
 **Checkpoint**: Flagging works end-to-end from extraction through to a visible `needs_review` status with a reason — testable independently of the queue/UI work in later phases.
