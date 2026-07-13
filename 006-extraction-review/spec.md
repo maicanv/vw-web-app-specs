@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-06
 
-**Updated**: 2026-07-07 (source story revised; all open questions resolved, new scope added; Record UID and Post-review delivery method/UID selection dropped from scope — reviewed records reuse the route's normal delivery unchanged)
+**Updated**: 2026-07-13 (added a sixth review rule: specific fields below a set number, chosen from a multi-select field list, alongside the earlier 2026-07-07 revision — source story revised; all open questions resolved, new scope added; Record UID and Post-review delivery method/UID selection dropped from scope — reviewed records reuse the route's normal delivery unchanged)
 
 **Status**: Draft
 
@@ -32,7 +32,7 @@ This spec covers the remaining scope: a per-document-type review configuration t
 
 ### User Story 1 - Configure which records go to review (Priority: P1)
 
-An admin editing a document type sees a new **Review Records** step that explains record review and offers a toggle to turn review on or off for that document type (on by default). When review is on, the admin selects which records the system routes to review by enabling any combination of rules: every record, records whose average confidence is below a chosen number, records from a chosen sender-domain list, records where a critical-marked field is below a chosen number, or records where any field is below a chosen number.
+An admin editing a document type sees a new **Review Records** step that explains record review and offers a toggle to turn review on or off for that document type (on by default). When review is on, the admin selects which records the system routes to review by enabling any combination of rules: every record, records whose average confidence is below a chosen number, records from a chosen sender-domain list, records where a critical-marked field is below a chosen number, records where any field is below a chosen number, or records where one or more specifically chosen fields (picked from a multi-select list of that document type's fields) is below a chosen number.
 
 **Why this priority**: This configuration is what turns the stored threshold into behaviour. Every downstream story (flagging, holding, queue) reads from it, so it comes first.
 
@@ -46,7 +46,8 @@ An admin editing a document type sees a new **Review Records** step that explain
 4. **Given** review is enabled, **Then** I can enable "records from a chosen sender-domain list go to review".
 5. **Given** review is enabled, **Then** I can enable "records with a critical field below N go to review" and set N.
 6. **Given** review is enabled, **Then** I can enable "records with any field below N go to review" and set N.
-7. **Given** review is turned off for a document type, **Then** its records are never auto-flagged for review.
+7. **Given** review is enabled, **Then** I can enable "records with a chosen field below N go to review", pick one or more fields from a multi-select list of that document type's fields, and set N.
+8. **Given** review is turned off for a document type, **Then** its records are never auto-flagged for review.
 
 ---
 
@@ -196,8 +197,9 @@ An admin assigns reviewers to a document type, choosing from existing org/worksp
 #### Review configuration (document type)
 
 - **FR-001**: The document type create/edit flow MUST include an Review Records step that explains record review and exposes an on/off toggle, defaulting to on.
-- **FR-002**: When review is enabled, users MUST be able to enable any combination of these review rules: all records; average confidence below a set number; records from a set sender-domain list; a critical field below a set number; any field below a set number. Enabled rules combine with OR: a record is flagged Needs Review if any enabled rule matches.
+- **FR-002**: When review is enabled, users MUST be able to enable any combination of these review rules: all records; average confidence below a set number; records from a set sender-domain list; a critical field below a set number; any field below a set number; one or more specifically chosen fields below a set number. Enabled rules combine with OR: a record is flagged Needs Review if any enabled rule matches.
 - **FR-003**: When review is disabled for a document type, the system MUST NOT auto-flag its records.
+- **FR-032**: For the "specific fields below N" rule, the Review Records step MUST offer a multi-select dropdown listing the document type's fields, restricted to fields whose value type supports a confidence threshold; the rule fires if any of the selected fields' confidence is below N for that record. (FR-030/031 stay retired — see Assumption A9.)
 
 #### Flagging
 
@@ -253,7 +255,7 @@ An admin assigns reviewers to a document type, choosing from existing org/worksp
 
 - **Extraction Record**: an extracted document instance; carries overall confidence, status (including Needs Review), a flag reason, and a delivery history. Gains: hold behaviour, review actions, audit history, and manual add-to-review.
 - **Extracted Field Value**: a single extracted value with its own confidence; gains an original-vs-corrected pair, a kept confidence score, and a manually-edited marker. A field may be marked critical.
-- **Review Configuration**: per-document-type settings (the Review Records step): the review on/off toggle plus the set of enabled review rules and their parameters (average threshold, domain list, critical-field threshold, any-field threshold).
+- **Review Configuration**: per-document-type settings (the Review Records step): the review on/off toggle plus the set of enabled review rules and their parameters (average threshold, domain list, critical-field threshold, any-field threshold, specific-fields threshold plus the chosen field list).
 - **Review Action**: a confirm, correct, reject, or re-send event with actor, timestamp, and before → after payload; the unit of the audit trail.
 - **Reviewer Assignment**: a link between an org/workspace member and a document type that grants the Reviewer role, queue visibility, and review actions.
 - **Record Lock**: a hard, temporary claim on a record while a reviewer edits it, releasing after 5 minutes.
@@ -276,7 +278,7 @@ An admin assigns reviewers to a document type, choosing from existing org/worksp
 The source page's open questions are all answered; the answers are folded into the requirements above and recorded here for traceability.
 
 - **D1 (overall confidence)**: Keep the average of field confidences. (FR-007)
-- **D2 (flag trigger)**: Offer both "any field below N" and "critical fields below N" as user-selectable rules in the Review Records step, alongside all-records, average-threshold, and domain-list rules. (FR-002)
+- **D2 (flag trigger)**: Offer "any field below N", "critical fields below N", and "specific fields below N" (multi-select) as user-selectable rules in the Review Records step, alongside all-records, average-threshold, and domain-list rules. (FR-002, FR-032)
 - **D3 (threshold location)**: Lives on the document type. (FR-001, FR-002)
 - **D4 (corrected value)**: Keep the original confidence score and add a manually-edited marker; an explicit Confirm is still required (correction alone does not clear Needs Review). (FR-015)
 - **D5 (routing axis)**: Assign reviewers by document type. (FR-023)
@@ -296,3 +298,4 @@ The source page's open questions are all answered; the answers are folded into t
 - **A7**: Reviewer notifications (in-app/email) are not part of this revision of the story; they are out of scope until re-added.
 - **A8**: The platform-wide Audit section is scoped in this feature to the Extraction Record modification subsystem; other subsystems are additive later.
 - **A9**: Record UID selection and a distinct post-review delivery method/UID are dropped from this revision as too much work for now; a reviewed (confirmed or corrected) record is delivered with the exact same method and UID handling the route already uses for its normal flow. Revisit if downstream systems need a different identifier or method after review.
+- **A10**: The "specific fields below N" multi-select only lists fields whose type carries a confidence score (excludes boolean/group fields, which have no meaningful per-field confidence); the list is scoped to the current document type's top-level and nested fields.

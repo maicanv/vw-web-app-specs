@@ -11,7 +11,7 @@ Services: Django http://127.0.0.1:8001, client http://localhost:5173 (`npm start
 
 ## Exercise the feature
 
-1. **Configure**: open a document type → new **Review Records** step → review toggle on (default) → enable rules, e.g. "average confidence below 80" and "critical field below 90". Optionally add reviewers in the same config (US9).
+1. **Configure**: open a document type → new **Review Records** step → review toggle on (default) → enable rules, e.g. "average confidence below 80", "critical field below 90", and "specific fields below 85" (pick one or more fields from the multi-select dropdown). Optionally add reviewers in the same config (US9).
 2. **Trigger**: run an email extraction (or create an `ExtractionRecord` via `factories.py` in a shell) whose confidences match an enabled rule.
 3. **Verify flagging + queue**: the record appears under the sidebar **Needs Review** entry with a pending count and the triggering reason; delivery does not fire. The records-list status filter no longer offers "needs review".
 4. **Review**: open the record from the queue (a 5-minute hard lock is claimed) → correct a value inline (before → after, edited badge, confidence kept) → **Confirm & Send** or **Reject**. A second user opening the same record sees "being reviewed by X" and gets 409 on edits.

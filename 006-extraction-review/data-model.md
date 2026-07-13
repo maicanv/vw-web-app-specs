@@ -23,8 +23,10 @@ Two new models, one new pydantic config, column changes on `OutputRoute`, and on
 | `sender_domains` | `list[str] \| None` | rule: sender's domain in list |
 | `critical_field_below` | `int \| None` (0–100) | rule: any critical-marked field below N |
 | `any_field_below` | `int \| None` (0–100) | rule: any field below N |
+| `specific_fields_below` | `int \| None` (0–100) | rule: any of `specific_fields` below N (FR-032) |
+| `specific_fields` | `list[str] \| None` | `DocumentTypeField` ids the "specific fields below N" rule checks; populated by the wizard's multi-select dropdown |
 
-A rule is enabled when set/true; enabled rules OR-combine (FR-002). Validation: thresholds 0–100; domains normalised lowercase, no `@`.
+A rule is enabled when set/true (the specific-fields rule additionally requires `specific_fields` non-empty); enabled rules OR-combine (FR-002). Validation: thresholds 0–100; domains normalised lowercase, no `@`; `specific_fields` ids must belong to the same document type and to a field type that carries a confidence score (A10).
 
 ### OutputRoute
 
@@ -98,7 +100,7 @@ rejected ──select for review / re-open──► needs_review               (
 Triggers into `needs_review` at extraction write-back (reasons accumulated, OR):
 1. Missing critical fields (existing rule, kept)
 2. Confidence unavailable (`overall_confidence is None`) — FR-006
-3. Enabled `review_config` rules: all-records, average-below, sender-domain, critical-field-below, any-field-below — FR-002/004
+3. Enabled `review_config` rules: all-records, average-below, sender-domain, critical-field-below, any-field-below, specific-fields-below — FR-002/004/032
 
 Review disabled (`review_config.enabled = False`) ⇒ no auto-flagging (FR-003); select-for-review still works.
 
@@ -108,6 +110,7 @@ Corrections never change status (D4); Confirm is the only path out of the hold.
 
 - Correction payload: values validated against the field's `field_type`/`FieldConfig` (reuse wizard serializers' validation). Allowed on any status, including `sent` (FR-014); unsent corrected records remain/become eligible per `DELIVERABLE_RECORD_STATUSES` (FR-016).
 - ReviewConfig: thresholds 0–100; enabling review with zero rules is valid but flags nothing (warn in UI).
+- ReviewConfig specific-fields rule: `specific_fields` must be non-empty and reference only fields belonging to this document type with a confidence-bearing type (A10); saving `specific_fields_below` with an empty `specific_fields` list is a validation error, not a silently-disabled rule.
 - Reviewer assignment: user must belong to the document type's organisation; assigner needs `document_types:edit`.
 - Lock: mutations by non-holders rejected (409) while an unexpired lock exists.
 - Resend: manual re-send refused when `resend_policy = block` and the delivery already succeeded (FR-018).
