@@ -28,6 +28,12 @@ Two new models, one new pydantic config, column changes on `OutputRoute`, and on
 
 A rule is enabled when set/true (the specific-fields rule additionally requires `specific_fields` non-empty); enabled rules OR-combine (FR-002). Validation: thresholds 0–100; domains normalised lowercase, no `@`; `specific_fields` ids must belong to the same document type and to a field type that carries a confidence score (A10).
 
+### DocumentTypeField
+
+| Change | Detail |
+|--------|--------|
+| − `confidence_threshold` | **dropped** (migration removes column from model, serializer, admin, `FieldConfig`/`template_schema`). Defined but never read at flag time; a per-field threshold would be a second review gate alongside `review_config`. Field-level review scoping is expressed via `review_config.specific_fields` instead. |
+
 ### OutputRoute
 
 | Change | Detail |
@@ -40,7 +46,7 @@ Record UID selection and a distinct post-review delivery method/UID were dropped
 ### ExtractionRecord — schema unchanged, behaviour changes
 
 - `overall_confidence` — mean of field confidences (D1), now compared against `review_config` rules at extraction write-back.
-- `needs_review_reason` — newline-joined structured reasons ("Overall confidence 61% below threshold 80%", "Field 'IBAN' 42% below threshold 80%", "Confidence unavailable", "Selected for review by Jane Doe"). Never cleared. The audit "originally flagged" marker is **not** a non-empty check on this text (that would count manual "Selected for review by …" entries); it is true only when `evaluate_needs_review` recorded at least one automatic-rule reason at write-back — a machine-readable check, not a substring scan.
+- `needs_review_reason` — newline-joined structured reasons ("Overall confidence 61% below threshold 80%", "Field 'IBAN' 42% below threshold 80%", "Confidence unavailable", "Selected for review by Jane Doe") describing why the record is **currently** in `needs_review`. **Cleared on exit** (confirm → `extracted`, reject → `rejected`), so no record in another status carries a stale reason. A persisted-forever reason is a data-consistency hazard (every consumer would have to reason about a maybe-stale value on any status). Evidence that a record was reviewed lives in the audit log (explicit `log_create` entries at flag/confirm/correct/reject), not on the record — no `originally_flagged`-from-text inference.
 
 ### ExtractedFieldValue — schema unchanged
 
@@ -52,7 +58,10 @@ Record UID selection and a distinct post-review delivery method/UID were dropped
 
 ### auditlog LogEntry (django-auditlog)
 
-Source for the platform Audit API (`apps/audit`). No org FK → the audit endpoint scopes per subsystem via org-scoped object subqueries (research R6). Subsystem `extraction_records` = LogEntry rows for `ExtractionRecord` + `ExtractedFieldValue`, plus delivery attempts mapped as `resend`.
+Source for the platform Audit API (`apps/audit`). Changes:
+- **+ `organisation` column** (nullable FK) populated by a `post_log`-signal receiver at write time → the audit endpoint filters by org directly (replaces the org-scoped-object-subquery approach).
+- Review-lifecycle actions (`confirm`, `correct`, `reject`, `select_for_review`, `resend`) are **logged explicitly** via `LogEntryManager.log_create` with a formatted `changes_text` at the domain moments — not derived from status transitions (which would couple the audit layer to the transition machinery). Corrections still use auditlog's automatic before → after diffs on `ExtractedFieldValue`.
+- The audit view filters by org + related model(s); `ExtractionRecord` + `ExtractedFieldValue` are surfaced now. Non-org / `is_staff` / null (system) actors are **excluded** from the view so Django-admin and internal edits do not leak to org users.
 
 ## New models
 
@@ -66,7 +75,7 @@ Source for the platform Audit API (`apps/audit`). No org FK → the audit endpoi
 | `created_by` | FK users.User | who assigned |
 | timestamps | BaseModel | |
 
-Constraints: `UniqueConstraint(document_type, user)`. auditlog-registered.
+Constraints: `UniqueConstraint(document_type, user)` for integrity. auditlog-registered. Assignment is **idempotent** (`get_or_create`) — re-assigning an already-assigned reviewer is a no-op, not a validation error; no defensive uniqueness pre-check in the serializer.
 
 Role linkage (D6, clarification): permission constant `DOCUMENT_ENTRIES_REVIEW = "document_entries:review"`; org-scoped seeded `Role(identifier="reviewer")` carrying it. First assignment for a user ensures the Reviewer `RoleAssignment`; deleting their last assignment removes it. Role = capability (access policy checks the permission string), assignment = scope (queryset filter).
 
