@@ -92,7 +92,7 @@ Derived predicates:
 
 - **Hard** lock (D7): correct/confirm/reject from non-holders → 409 while `is_locked`. TTL **5 minutes** (`expires_at = now + 5min`), refreshed on save activity.
 - Removing a reviewer's assignments releases their active locks (edge case: reviewer removed mid-edit).
-- `AbstractAccessOverride` is not used.
+- View layer is reused too: `ResourceLockViewSet` is split so the core acquire/release logic lives in an MFA-free base mixin; `document_entries` mounts only that mixin (as `claim`/`release`) — no cloned lock logic, no MFA. `AbstractAccessOverride` is not used.
 
 ## State transitions
 

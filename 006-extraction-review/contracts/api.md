@@ -51,7 +51,9 @@ Response `200`: record detail (existing serializer) with per-value additions:
 
 ### 2. Platform audit — `GET /api/v1/audit/`
 
-New thin `apps/audit` read-only endpoint over auditlog (FR-019..021). Org-scoped per subsystem (research R6). Query params: `subsystem` (required for v1; `extraction_records` is the only value shipped), `date_from`, `date_to`, `actor`, pagination.
+New thin `apps/audit` read-only endpoint over auditlog (FR-019..021). Org scoping is **direct**: a nullable `organisation` column on `LogEntry`, populated at write time by a `post_log`-signal receiver — no per-subsystem registry or object subqueries. Query params: `models` (related-model group; `extraction_records` = `ExtractionRecord` + `ExtractedFieldValue` is the only group shipped), `date_from`, `date_to`, `actor`, pagination. Rows with non-org, `is_staff`, or null/system actors are excluded, so Django-admin and internal edits never surface to org users.
+
+Review-lifecycle actions are **logged explicitly** by the domain code via `LogEntryManager.log_create` (flagged-for-review, confirm, correct, reject, select-for-review, resend), each with a human-readable `change_message` — not derived from status transitions. Corrections additionally carry auditlog's automatic before → after diffs on `ExtractedFieldValue`. Whether a record was originally flagged (and why) is reconstructable from its `flagged_for_review` row; there is no per-row `originally_flagged` field (the on-record reason is cleared when the record leaves `needs_review`, so it cannot be derived from it).
 
 Response `200`:
 ```json
@@ -60,18 +62,16 @@ Response `200`:
     {
       "actor": {"id": 7, "name": "Jane Doe"},
       "timestamp": "2026-07-07T14:03:00Z",
-      "subsystem": "extraction_records",
       "action": "correct",
       "object": {"type": "extraction_record", "id": "aB3xK", "label": "Invoice INV-2041"},
       "changes": [{"field": "IBAN", "before": "NL91ABNA0417164", "after": "NL91ABNA0417164300"}],
-      "originally_flagged": true,
-      "flag_reason": "Field 'IBAN' 42% below threshold 80%"
+      "change_message": "Corrected 1 value on Invoice INV-2041"
     }
   ]
 }
 ```
 
-`action` ∈ `confirm | correct | reject | select_for_review | resend | status_change`. Read-only, paginated. Permission: existing document-entry view access for the `extraction_records` subsystem; future subsystems bring their own guard.
+`action` ∈ `flagged_for_review | confirm | correct | reject | select_for_review | resend`. Read-only, paginated. Permission: existing document-entry view access for the `extraction_records` model group; future areas surface by selecting their models and bring their own guard.
 
 ### 3. Reviewer assignment — `GET/PUT /document-types/{id}/reviewers/`
 
@@ -94,7 +94,7 @@ Requires `document_types:edit`. PUT replaces the set; grants/revokes the Reviewe
 
 ### 5. Record lock — `POST /extraction-records/{id}/claim/`, `DELETE /extraction-records/{id}/claim/`
 
-Mirrors the locks-app view pattern; hard lock, 5-minute TTL (D7), refreshed on save activity.
+Mounts the locks app's MFA-free base view mixin (split out of `ResourceLockViewSet` — no cloned lock logic, no MFA, no `AbstractAccessOverride`); hard lock, 5-minute TTL (D7), refreshed on save activity.
 
 - `POST` → `200 {"holder": {...}, "expires_at": "..."}` or `409` with current holder if held by someone else.
 - `DELETE` releases own lock; auto-expiry after TTL.

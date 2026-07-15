@@ -133,7 +133,7 @@ A user discovers an error in a record that was already delivered, corrects the v
 
 ### User Story 7 - Platform-wide audit section (Priority: P2)
 
-A new **Audit** section under the Organisation area of the sidebar lets a user inspect what happened across subsystems, not only in the admin panel. The user filters by subsystem; **Extraction Record modification** is the first subsystem shown. For each audited action the section shows who acted, when, what changed (before → after), the action type (confirm, correct, reject, re-send), and whether the record was originally flagged for low confidence.
+A new **Audit** section under the Organisation area of the sidebar lets a user inspect what happened across subsystems, not only in the admin panel. The user filters by subsystem; **Extraction Record modification** is the first subsystem shown. For each audited action the section shows who acted, when, what changed (before → after), and the action type (confirm, correct, reject, re-send). The flag moment itself is audited as its own event, so whether (and why) a record was originally flagged for low confidence is visible in the same trail.
 
 **Why this priority**: Accountability for a workflow that gates data flowing into financial/ERP systems. Meaningful once Stories 3–6 produce actions to audit.
 
@@ -141,7 +141,7 @@ A new **Audit** section under the Organisation area of the sidebar lets a user i
 
 **Acceptance Scenarios**:
 
-1. **Given** a record is confirmed, corrected, rejected, or re-sent, **Then** the system records who did it, when, what changed (before → after), the action type, and whether the record was originally flagged for low confidence.
+1. **Given** a record is confirmed, corrected, rejected, or re-sent, **Then** the system records who did it, when, what changed (before → after), and the action type; **and given** a record was flagged for review, **Then** the flag event and its reason appear in the same audit trail.
 2. **Given** I am a product user (not an admin-panel user), **Then** I can view this history in the Audit section.
 3. **Given** I open the Audit section, **Then** I can filter by subsystem, with Extraction Record modification available as the first subsystem.
 
@@ -230,7 +230,7 @@ An admin assigns reviewers to a document type, choosing from existing org/worksp
 
 #### Audit
 
-- **FR-019**: System MUST record for every confirm/correct/reject/re-send: actor, timestamp, action type, changed values (before → after), and whether the record was originally flagged.
+- **FR-019**: System MUST record for every confirm/correct/reject/re-send: actor, timestamp, action type, and changed values (before → after). The flag moment (which rule fired, why) MUST be recorded as its own audit event, so whether a record was originally flagged is reconstructable from the trail — it is not stored on each action row.
 - **FR-020**: A platform-wide Audit section MUST exist under the Organisation area of the sidebar, viewable by product users (not only the admin panel).
 - **FR-021**: The Audit section MUST let users filter by subsystem, with Extraction Record modification available as the first subsystem.
 

@@ -22,7 +22,7 @@ All previous open questions are resolved (spec D1–D9 + Clarifications); the pr
 
 **Language/Version**: Python 3.12 (Django 4.2 + DRF), TypeScript / React 18 (Vite, Mantine, TanStack Query)
 **Primary Dependencies**: DRF, django-pydantic-field (`SchemaField` for ReviewConfig), django-auditlog (extend registration to `ExtractedFieldValue`), django-filter, `apps/locks` (AbstractLock), `apps/roles` (dynamic Role + RoleAssignment)
-**Storage**: PostgreSQL — 2 new tables (`ReviewerAssignment`, `ExtractionRecordLock`), a renamed column on `OutputRoute` (resend_policy) and a new column on `DocumentType` (review_config), one column drop (`delivery_mode`) preceded by a behaviour-preserving data migration
+**Storage**: PostgreSQL — 2 new tables (`ReviewerAssignment`, `ExtractionRecordLock`), a renamed column on `OutputRoute` (resend_policy), a new column on `DocumentType` (review_config), a new nullable `organisation` column on auditlog's `LogEntry` (org scoping for the audit API), and two column drops: `OutputRoute.delivery_mode` (preceded by a behaviour-preserving data migration) and `DocumentTypeField.confidence_threshold` (never read at flag time; the review gate lives only in `review_config`)
 **Testing**: pytest via `docker compose exec django pytest` (run from `backend/`); no frontend tests unless asked
 **Target Platform**: existing Docker Compose stack (Django :8001, client :5173)
 **Project Type**: web application, extending `backend/django/apps/document_entries`, `apps/locks`, a new thin `apps/audit`, and `client/src/app/documentEntry` + layout/org area
@@ -34,8 +34,8 @@ All previous open questions are resolved (spec D1–D9 + Clarifications); the pr
 
 *GATE: evaluated against constitution v5.1.2 — PASS (pre-research and post-design).*
 
-- **I. Protect Sensitive Data**: PASS — every new query org-scoped: `ReviewerAssignment` carries `organisation`; queue predicate runs through existing org-scoped querysets; the audit endpoint scopes `LogEntry` per subsystem via org-scoped object subqueries (LogEntry has no org FK — this is the one place scoping is constructed, called out in research R6 and tested explicitly). Registering `ExtractedFieldValue` with auditlog stores values already visible in the product; no new PII class.
-- **II. Respect the Architecture**: PASS — follows established patterns: `SchemaField` config (as `PayloadConfig`), `AbstractLock` subclass (as `ApplicationLock`), dynamic Role + permission-string access policies, viewset `@action`s. One new pattern: a platform-wide audit read API over auditlog (`apps/audit`) — no prior art in the repo; approach agreed here in the plan phase per constitution II (thin read-only viewset, subsystem registry, org-scoping rule per subsystem).
+- **I. Protect Sensitive Data**: PASS — every new query org-scoped: `ReviewerAssignment` carries `organisation`; queue predicate runs through existing org-scoped querysets; the audit endpoint scopes `LogEntry` directly via a new nullable `organisation` column populated by a `post_log`-signal receiver at write time, and excludes non-org / `is_staff` / null (system) actors so admin-panel and internal edits never leak to org users (tested explicitly). Registering `ExtractedFieldValue` with auditlog stores values already visible in the product; no new PII class.
+- **II. Respect the Architecture**: PASS — follows established patterns: `SchemaField` config (as `PayloadConfig`), `AbstractLock` subclass (as `ApplicationLock`), dynamic Role + permission-string access policies, viewset `@action`s. One new pattern: a platform-wide audit read API over auditlog (`apps/audit`) — no prior art in the repo; approach agreed here in the plan phase per constitution II (thin read-only viewset over `LogEntry` with a direct org column + related-model filter; review-lifecycle actions logged explicitly via `LogEntryManager.log_create`, not derived from transitions).
 - **III. Test What Matters**: PASS — tests target behaviour: rule evaluation incl. OR combination and confidence-unavailable, hold gating, new transitions (select-for-review, reject re-open), correction + lock conflict (409), resend-policy block, delivery-mode migration outcome, queue visibility + zero-assignment fallback, audit org-scoping and action mapping. No frontend tests (user preference).
 - **IV. Ship Incrementally; Enterprise-Grade**: PASS — user stories ship independently in spec priority order. The two non-additive API changes (rename/removal) are consumed only by the same-repo client and land with lossless data migrations in the same deploy; noted here per constitution IV. The delivery-mode drop is preceded by a data migration that preserves manual-route behaviour via the review-all rule.
 - **V. Make Failures Visible**: PASS — flag evaluation runs in the existing extraction write-back path already wired to Sentry; delivery failure surfacing unchanged; no new background jobs (notifications dropped).
@@ -63,9 +63,10 @@ specs/006-extraction-review/
 backend/django/apps/document_entries/
 ├── models.py                        # + DocumentType.review_config; + ReviewerAssignment;
 │                                    #   OutputRoute: repeat_policy→resend_policy, −delivery_mode;
+│                                    #   −DocumentTypeField.confidence_threshold;
 │                                    #   auditlog.register(ExtractedFieldValue)
 ├── review_config.py                 # ReviewConfig pydantic model (new, mirrors payload_config.py);
-│                                    #   incl. specific_fields_below (int|None) + specific_fields (list[uuid]|None)
+│                                    #   incl. specific_fields_below (int|None) + specific_fields (list[str]|None)
 ├── enums.py                         # RepeatPolicy→ResendPolicy(allow|block); −DeliveryMode;
 │                                    #   ALLOWED_STATUS_TRANSITIONS += {extracted,rejected,sent,send_failed}→needs_review
 ├── services.py                      # + compute_overall_confidence, evaluate_needs_review (R2);
@@ -77,10 +78,14 @@ backend/django/apps/document_entries/
 └── migrations/                      # schema + data migrations (seed avg rule; manual-route→review-all; policy rename)
 
 backend/django/apps/locks/
-└── models.py                        # + ExtractionRecordLock(AbstractLock), TTL 5 min
+├── models.py                        # + ExtractionRecordLock(AbstractLock), TTL 5 min
+└── base/views.py                    # ResourceLockViewSet split: MFA-free base mixin (acquire/release)
+                                     #   + MFA/override layer for the existing application-lock use case
 
 backend/django/apps/audit/           # NEW thin app: LogEntry read API (R6)
-├── views.py / serializers.py / urls.py / subsystems.py
+├── views.py / serializers.py / urls.py / receivers.py / migrations/
+                                     #   org column on LogEntry (post_log receiver), model filter,
+                                     #   staff/system-actor exclusion
 
 backend/django/common/constants/permissions.py   # + DOCUMENT_ENTRIES_REVIEW
 backend/django/common/access_policy/document_entry_type_access_policy.py  # reviewer statements
@@ -110,9 +115,9 @@ Build order follows spec story priorities; each phase ships independently.
 4. **Needs Review queue (US4, FR-011..013)** — new transitions into `needs_review` (select-for-review, reject re-open); `review_queue` filter + count endpoint; sidebar entry + queue page; remove the list filter option.
 5. **Correction (US5, FR-014..016)** — `correct/` endpoint (validation per FieldConfig, `is_manually_edited`, before → after from `raw_value`, never touches status); auditlog registration of `ExtractedFieldValue`; inline edit UI in FieldTable.
 6. **Re-send + delivery-setting changes (US6, FR-017/018, FR-028/029)** — resend-policy rename + Block semantics at resend eligibility; delivery-mode removal with behaviour-preserving data migration; OutputRouteForm updates; delivery tests. Reviewed records reuse the route's normal delivery method and UID unchanged.
-7. **Audit (US7, FR-019..021)** — `apps/audit` read API over LogEntry with subsystem registry + org scoping; org-area Audit page with subsystem filter; action-mapping serializer tests incl. org isolation.
+7. **Audit (US7, FR-019..021)** — `apps/audit` read API over LogEntry: `organisation` column + `post_log` receiver for direct org scoping, related-model filter, staff/system-actor exclusion; explicit `LogEntryManager.log_create` rows at the review-lifecycle moments (flag/confirm/correct/reject/select-for-review/resend); org-area Audit page with model filter; tests incl. org isolation and actor exclusion.
 8. **UI signalling (US8, FR-022)** — `applied_threshold` + per-value `below_threshold` in detail serializer; highlight + recommendation banner.
-9. **Reviewer assignment (US9, FR-023..027)** — `DOCUMENT_ENTRIES_REVIEW` permission + seeded Reviewer role; `ReviewerAssignment` + `reviewers/` sub-resource; `records_for_reviewer` queue scoping + zero-assignment fallback; `ExtractionRecordLock` (hard, 5 min) + claim/release + 409 guards; config UI + lock banner.
+9. **Reviewer assignment (US9, FR-023..027)** — `DOCUMENT_ENTRIES_REVIEW` permission + seeded Reviewer role; `ReviewerAssignment` + `reviewers/` sub-resource; `records_for_reviewer` queue scoping + zero-assignment fallback; `ExtractionRecordLock` (hard, 5 min) with claim/release mounted from the locks app's MFA-free base view mixin (split out of `ResourceLockViewSet` — no cloned lock logic) + 409 guards; assignment removal releases the user's active locks; config UI + lock banner.
 
 Dependencies: 2→1 (rules read config), 3→2, 4→2, 6's post-review bits→2 (needs the flag marker), 7→3/5 (needs actions to audit), 9→4 (scopes the queue). 5 and 8 are independent after 2.
 
