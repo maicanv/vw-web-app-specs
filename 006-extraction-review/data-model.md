@@ -92,7 +92,7 @@ Derived predicates:
 
 - **Hard** lock (D7): correct/confirm/reject from non-holders → 409 while `is_locked`. TTL **5 minutes** (`expires_at = now + 5min`), refreshed on save activity.
 - Removing a reviewer's assignments releases their active locks (edge case: reviewer removed mid-edit).
-- `AbstractAccessOverride` subclass deferred until takeover is needed.
+- `AbstractAccessOverride` is not used.
 
 ## State transitions
 
