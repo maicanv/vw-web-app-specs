@@ -48,7 +48,7 @@ description: "Task list for Extraction Review — Confidence & Control Step"
 
 **Purpose**: Nothing new to scaffold — the feature extends the existing `apps.document_entries` app and `apps.locks`, plus one new thin app.
 
-- [ ] T001 Create the new `apps/audit` Django app skeleton (`backend/django/apps/audit/__init__.py`, `apps.py`, `urls.py`) and register it in `backend/django/manage_platform/settings.py` `INSTALLED_APPS`; wire `apps/audit/urls.py` into the project's root URL config at `/api/v1/audit/`
+- [x] T001 Create the new `apps/audit` Django app skeleton (`backend/django/apps/audit/__init__.py`, `apps.py`, `urls.py`) and register it in `backend/django/manage_platform/settings.py` `INSTALLED_APPS`; wire `apps/audit/urls.py` into the project's root URL config at `/api/v1/audit/`
 
 **Checkpoint**: `apps/audit` importable and routed; no behaviour yet.
 
@@ -60,17 +60,17 @@ description: "Task list for Extraction Review — Confidence & Control Step"
 
 **⚠️ CRITICAL**: Do not start Phase 3+ until migrations in this phase are generated, reviewed, and the user has confirmed running them.
 
-- [ ] T002 [P] Add `ReviewConfig` pydantic model (`enabled: bool = True`, `all_records: bool = False`, `average_below: int | None`, `sender_domains: list[str] | None`, `critical_field_below: int | None`, `any_field_below: int | None`, `specific_fields_below: int | None`, `specific_fields: list[str] | None`) in new file `backend/django/apps/document_entries/review_config.py`, mirroring `payload_config.py`'s style; validate `specific_fields_below` requires a non-empty `specific_fields`
-- [ ] T003 Add `DocumentType.review_config = SchemaField(schema=ReviewConfig, default=ReviewConfig)` in `backend/django/apps/document_entries/models.py` (depends on T002)
-- [ ] T004 Rename `OutputRoute.repeat_policy` → `resend_policy`, add `ResendPolicy` choices (`allow`, `block`) replacing `RepeatPolicy` in `backend/django/apps/document_entries/enums.py`, and update the field in `backend/django/apps/document_entries/models.py`
-- [ ] T004b Drop `DocumentTypeField.confidence_threshold`: remove the column from the model in `backend/django/apps/document_entries/models.py` and every reference in `serializers.py`, `admin.py`, and the `FieldConfig`/`template_schema` definitions (the review gate lives only in `review_config`; field-level scoping is `specific_fields`)
-- [ ] T005 Run `docker compose exec django python manage.py makemigrations document_entries` for T003/T004/T004b (schema migration adding `review_config`, renaming `repeat_policy`→`resend_policy` with a values-preserving `RunPython` data step `allow_resend→allow`, `prevent_duplicates→block`, and dropping `confidence_threshold`) — **stop and get user confirmation before running `migrate`**
-- [ ] T006 [P] Add a data migration in `backend/django/apps/document_entries/migrations/` seeding `review_config.average_below` from `DocumentType.global_confidence_threshold` where set (reverse operation: no-op restore, since the source column is untouched) — **user-confirmed migrate**
-- [ ] T007 [P] Add `DOCUMENT_ENTRIES_REVIEW = "document_entries:review"` to `backend/django/common/constants/permissions.py` under a new "Document Entries Review Permissions" section
-- [ ] T008 [P] Add `ExtractionRecordLock(AbstractLock)` in `backend/django/apps/locks/models.py`: `resource = models.OneToOneField("document_entries.ExtractionRecord", on_delete=models.CASCADE, related_name="lock")`, `UniqueConstraint(fields=["organisation", "holder", "resource"], name="unique_extraction_record_lock")`, `@auditlog.register(exclude_fields=["key", "created_at", "updated_at"])` — mirrors `ApplicationLock`
-- [ ] T009 Run `docker compose exec django python manage.py makemigrations locks` for T008 — **user-confirmed migrate**
-- [ ] T010 [P] Register `ExtractedFieldValue` with `django-auditlog` in `backend/django/apps/document_entries/models.py` (`@auditlog.register(exclude_fields=[...])` above the class, excluding write-once snapshot fields per the model's existing `Meta` comment: `field_codename`, `field_name`, `field_type`, `is_critical`, `display_order`, `created_at`, `updated_at`)
-- [ ] T011 Extend `ALLOWED_STATUS_TRANSITIONS` in `backend/django/apps/document_entries/enums.py`: add `ExtractionRecordStatus.EXTRACTED`, `SENT`, `SEND_FAILED`, `REJECTED` → `{ExtractionRecordStatus.NEEDS_REVIEW}` (Select-for-review / reject re-open, depends on T004 for the enums module already being touched)
+- [x] T002 [P] Add `ReviewConfig` pydantic model (`enabled: bool = True`, `all_records: bool = False`, `average_below: int | None`, `sender_domains: list[str] | None`, `critical_field_below: int | None`, `any_field_below: int | None`, `specific_fields_below: int | None`, `specific_fields: list[str] | None`) in new file `backend/django/apps/document_entries/review_config.py`, mirroring `payload_config.py`'s style; validate `specific_fields_below` requires a non-empty `specific_fields`
+- [x] T003 Add `DocumentType.review_config = SchemaField(schema=ReviewConfig, default=ReviewConfig)` in `backend/django/apps/document_entries/models.py` (depends on T002)
+- [x] T004 Rename `OutputRoute.repeat_policy` → `resend_policy`, add `ResendPolicy` choices (`allow`, `block`) replacing `RepeatPolicy` in `backend/django/apps/document_entries/enums.py`, and update the field in `backend/django/apps/document_entries/models.py`
+- [x] T004b Drop `DocumentTypeField.confidence_threshold`: remove the column from the model in `backend/django/apps/document_entries/models.py` and every reference in `serializers.py`, `admin.py`, and the `FieldConfig`/`template_schema` definitions (the review gate lives only in `review_config`; field-level scoping is `specific_fields`)
+- [x] T005 Run `docker compose exec django python manage.py makemigrations document_entries` for T003/T004/T004b (schema migration adding `review_config`, renaming `repeat_policy`→`resend_policy` with a values-preserving `RunPython` data step `allow_resend→allow`, `prevent_duplicates→block`, and dropping `confidence_threshold`) — **stop and get user confirmation before running `migrate`**
+- [x] T006 [P] Add a data migration in `backend/django/apps/document_entries/migrations/` seeding `review_config.average_below` from `DocumentType.global_confidence_threshold` where set (reverse operation: no-op restore, since the source column is untouched) — **user-confirmed migrate**
+- [x] T007 [P] Add `DOCUMENT_ENTRIES_REVIEW = "document_entries:review"` to `backend/django/common/constants/permissions.py` under a new "Document Entries Review Permissions" section
+- [x] T008 [P] Add `ExtractionRecordLock(AbstractLock)` in `backend/django/apps/locks/models.py`: `resource = models.OneToOneField("document_entries.ExtractionRecord", on_delete=models.CASCADE, related_name="lock")`, `UniqueConstraint(fields=["organisation", "holder", "resource"], name="unique_extraction_record_lock")`, `@auditlog.register(exclude_fields=["key", "created_at", "updated_at"])` — mirrors `ApplicationLock`
+- [x] T009 Run `docker compose exec django python manage.py makemigrations locks` for T008 — **user-confirmed migrate**
+- [x] T010 [P] Register `ExtractedFieldValue` with `django-auditlog` in `backend/django/apps/document_entries/models.py` (`@auditlog.register(exclude_fields=[...])` above the class, excluding write-once snapshot fields per the model's existing `Meta` comment: `field_codename`, `field_name`, `field_type`, `is_critical`, `display_order`, `created_at`, `updated_at`)
+- [x] T011 Extend `ALLOWED_STATUS_TRANSITIONS` in `backend/django/apps/document_entries/enums.py`: add `ExtractionRecordStatus.EXTRACTED`, `SENT`, `SEND_FAILED`, `REJECTED` → `{ExtractionRecordStatus.NEEDS_REVIEW}` (Select-for-review / reject re-open, depends on T004 for the enums module already being touched)
 
 **Checkpoint**: `review_config` and `resend_policy` exist and are migrated; `ExtractedFieldValue` is audited; the lock model exists; new transitions are declared. User stories can now proceed.
 
@@ -84,16 +84,16 @@ description: "Task list for Extraction Review — Confidence & Control Step"
 
 ### Tests for User Story 1
 
-- [ ] T012 [P] [US1] Test `review_config` persistence and defaults (`enabled=True` on a fresh document type), plus `specific_fields_below` validation (rejects an empty `specific_fields` list, rejects a field id from another document type) in `backend/django/tests/test_apps/test_document_entries/test_document_type_viewset.py`
-- [ ] T013 [P] [US1] Test the `average_below` seeding migration converts an existing `global_confidence_threshold` value correctly in a new `backend/django/tests/test_apps/test_document_entries/test_migrations.py`
+- [X] T012 [P] [US1] Test `review_config` persistence and defaults (`enabled=True` on a fresh document type), plus `specific_fields_below` validation (rejects an empty `specific_fields` list, rejects a field id from another document type) in `backend/django/tests/test_apps/test_document_entries/test_document_type_viewset.py`
+- [X] T013 [P] [US1] Test the `average_below` seeding migration converts an existing `global_confidence_threshold` value correctly in a new `backend/django/tests/test_apps/test_document_entries/test_migrations.py`
 
 ### Implementation for User Story 1
 
-- [ ] T014 [US1] Add `review_config` to `DocumentTypeSerializer` / `DocumentTypeUpdateSerializer` in `backend/django/apps/document_entries/serializers.py`, validating thresholds 0–100, lower-casing/stripping `@` from `sender_domains` entries, and validating `specific_fields` ids belong to this document type and to a confidence-bearing field type
-- [ ] T015 [US1] Rename `client/src/app/documentEntry/documentTypes/steps/ConfidenceStep.tsx` to `ReviewRecordsStep.tsx` (avoids collision with the existing `ReviewStep.tsx` final wizard step) and implement the toggle + six rule inputs (thresholds via `NumberInput`, `sender_domains` via a tags input, and "specific fields below N" via a `NumberInput` + `MultiSelect` sourced from the wizard's in-progress field list, excluding boolean/group field types), wired to `review_config` on the form
-- [ ] T016 [US1] Register `ReviewRecordsStep` in the stepper in `client/src/app/documentEntry/documentTypes/DocumentTypeCreatePage.tsx` (import, add to the steps array, bump `STEPS_WITHOUT_OUTPUT` / `STEPS_WITH_OUTPUT`, extend `validateStep` in `client/src/app/documentEntry/documentTypes/documentTypeFormValidation.ts` for threshold bounds)
-- [ ] T017 [US1] Add `review_config` to the document-type form types/payload in `client/src/app/documentEntry/documentTypes/useDocumentTypeForm.ts` (or the equivalent form-state file) and `buildSavePayload` in `DocumentTypeCreatePage.tsx`
-- [ ] T018 [US1] Add new i18n keys to `client/src/translations/en.json` only, per project convention — do not add or fill them in the secondary locale files (they are translated later in bulk)
+- [X] T014 [US1] Add `review_config` to `DocumentTypeSerializer` / `DocumentTypeUpdateSerializer` in `backend/django/apps/document_entries/serializers.py`, validating thresholds 0–100, lower-casing/stripping `@` from `sender_domains` entries, and validating `specific_fields` ids belong to this document type and to a confidence-bearing field type
+- [X] T015 [US1] Rename `client/src/app/documentEntry/documentTypes/steps/ConfidenceStep.tsx` to `ReviewRecordsStep.tsx` (avoids collision with the existing `ReviewStep.tsx` final wizard step) and implement the toggle + six rule inputs (thresholds via `NumberInput`, `sender_domains` via a tags input, and "specific fields below N" via a `NumberInput` + `MultiSelect` sourced from the wizard's in-progress field list, excluding boolean/group field types), wired to `review_config` on the form
+- [X] T016 [US1] Register `ReviewRecordsStep` in the stepper in `client/src/app/documentEntry/documentTypes/DocumentTypeCreatePage.tsx` (import, add to the steps array, bump `STEPS_WITHOUT_OUTPUT` / `STEPS_WITH_OUTPUT`, extend `validateStep` in `client/src/app/documentEntry/documentTypes/documentTypeFormValidation.ts` for threshold bounds)
+- [X] T017 [US1] Add `review_config` to the document-type form types/payload in `client/src/app/documentEntry/documentTypes/useDocumentTypeForm.ts` (or the equivalent form-state file) and `buildSavePayload` in `DocumentTypeCreatePage.tsx`
+- [X] T018 [US1] Add new i18n keys to `client/src/translations/en.json` only, per project convention — do not add or fill them in the secondary locale files (they are translated later in bulk)
 
 **Checkpoint**: Review Records step is fully functional and independently testable — config saves and loads.
 
@@ -107,14 +107,14 @@ description: "Task list for Extraction Review — Confidence & Control Step"
 
 ### Tests for User Story 2
 
-- [ ] T019 [P] [US2] Unit tests for `compute_overall_confidence` (mean of field confidences, `None` when no scorable fields) in `backend/django/tests/test_apps/test_document_entries/test_services.py`
-- [ ] T020 [P] [US2] Unit tests for `evaluate_needs_review`: each rule independently (incl. specific-fields-below with 1 and 2+ selected fields, and a case where a non-selected field is below N but does not flag), OR combination across multiple enabled rules, confidence-unavailable reason, boundary case (`confidence == threshold` does not flag), `review_config.enabled=False` → no auto-flag, in `backend/django/tests/test_apps/test_document_entries/test_services.py`
+- [X] T019 [P] [US2] Unit tests for `compute_overall_confidence` (mean of field confidences, `None` when no scorable fields) in `backend/django/tests/test_apps/test_document_entries/test_services.py`
+- [X] T020 [P] [US2] Unit tests for `evaluate_needs_review`: each rule independently (incl. specific-fields-below with 1 and 2+ selected fields, and a case where a non-selected field is below N but does not flag), OR combination across multiple enabled rules, confidence-unavailable reason, boundary case (`confidence == threshold` does not flag), `review_config.enabled=False` → no auto-flag, in `backend/django/tests/test_apps/test_document_entries/test_services.py`
 
 ### Implementation for User Story 2
 
-- [ ] T021 [US2] Extract the existing inline confidence-mean calculation into `compute_overall_confidence(field_values) -> int | None` in `backend/django/apps/document_entries/services.py`
-- [ ] T022 [US2] Implement `evaluate_needs_review(record, field_values, review_config) -> list[str]` in `backend/django/apps/document_entries/services.py`: OR-combines missing-critical-fields (existing rule), confidence-unavailable, and the six `review_config` rules (incl. specific-fields-below, checking each `field_values` entry whose `field_id` is in `review_config.specific_fields`); returns human-readable reasons (e.g. `"Overall confidence 61% below threshold 80%"`, `"Field 'IBAN' 42% below threshold 80%"`, `"Confidence unavailable"`)
-- [ ] T023 [US2] Call `evaluate_needs_review` at extraction write-back (where the missing-critical-fields check currently fires) in `backend/django/apps/document_entries/services.py`; join returned reasons with `\n` into `ExtractionRecord.needs_review_reason` and set `status = needs_review` when non-empty
+- [X] T021 [US2] Extract the existing inline confidence-mean calculation into `compute_overall_confidence(field_values) -> int | None` in `backend/django/apps/document_entries/services.py`
+- [X] T022 [US2] Implement `evaluate_needs_review(record, field_values, review_config) -> list[str]` in `backend/django/apps/document_entries/services.py`: OR-combines missing-critical-fields (existing rule), confidence-unavailable, and the six `review_config` rules (incl. specific-fields-below, checking each `field_values` entry whose `field_id` is in `review_config.specific_fields`); returns human-readable reasons (e.g. `"Overall confidence 61% below threshold 80%"`, `"Field 'IBAN' 42% below threshold 80%"`, `"Confidence unavailable"`)
+- [X] T023 [US2] Call `evaluate_needs_review` at extraction write-back (where the missing-critical-fields check currently fires) in `backend/django/apps/document_entries/services.py`; join returned reasons with `\n` into `ExtractionRecord.needs_review_reason` and set `status = needs_review` when non-empty
 
 **Checkpoint**: Flagging works end-to-end from extraction through to a visible `needs_review` status with a reason — testable independently of the queue/UI work in later phases.
 
@@ -128,14 +128,14 @@ description: "Task list for Extraction Review — Confidence & Control Step"
 
 ### Tests for User Story 3
 
-- [ ] T024 [P] [US3] Integration test: a `needs_review` record is excluded from `DeliveryService`'s auto-delivery path and from manual-send eligibility, in `backend/django/tests/test_apps/test_document_entries/test_delivery_service.py`
-- [ ] T025 [P] [US3] Integration test: confirming a `needs_review` record via `update_status` transitions it to `extracted`, **clears `needs_review_reason`**, and triggers auto-delivery when applicable (regression pin on existing behaviour); rejecting also clears the reason, in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py`
+- [X] T024 [P] [US3] Integration test: a `needs_review` record is excluded from `DeliveryService`'s auto-delivery path and from manual-send eligibility, in `backend/django/tests/test_apps/test_document_entries/test_delivery_service.py`
+- [X] T025 [P] [US3] Integration test: confirming a `needs_review` record via `update_status` transitions it to `extracted`, **clears `needs_review_reason`**, and triggers auto-delivery when applicable (regression pin on existing behaviour); rejecting also clears the reason, in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py`
 
 ### Implementation for User Story 3
 
-- [ ] T026 [US3] Verify `DELIVERABLE_STATUSES` / `DELIVERABLE_RECORD_STATUSES` in `backend/django/apps/document_entries/enums.py` already exclude `needs_review` (no code change expected — confirm via T024); if a gap is found, close it here
-- [ ] T026b [US3] Clear `needs_review_reason` on every transition **out of** `needs_review` (Confirm → `extracted`, Reject → `rejected`) in the `update_status` handling in `backend/django/apps/document_entries/extraction_record_view_set.py` / `serializers.py` — the reason describes only the current hold and must never persist past it
-- [ ] T027 [US3] Add a blocked-send explainer to `client/src/app/documentEntry/records/ExtractionRecordDetailPage.tsx`: when `status === 'needs_review'`, render the flag reasons (from `needs_review_reason`) and the Confirm & Send / Correct / Reject action bar (Confirm/Reject reuse the existing `update_status` call; Correct is wired in Phase 7)
+- [X] T026 [US3] Verify `DELIVERABLE_STATUSES` / `DELIVERABLE_RECORD_STATUSES` in `backend/django/apps/document_entries/enums.py` already exclude `needs_review` (no code change expected — confirm via T024); if a gap is found, close it here
+- [X] T026b [US3] Clear `needs_review_reason` on every transition **out of** `needs_review` (Confirm → `extracted`, Reject → `rejected`) in the `update_status` handling in `backend/django/apps/document_entries/extraction_record_view_set.py` / `serializers.py` — the reason describes only the current hold and must never persist past it
+- [X] T027 [US3] Add a blocked-send explainer to `client/src/app/documentEntry/records/ExtractionRecordDetailPage.tsx`: when `status === 'needs_review'`, render the flag reasons (from `needs_review_reason`) and the Confirm & Send / Correct / Reject action bar (Confirm/Reject reuse the existing `update_status` call; Correct is wired in Phase 7)
 
 **Checkpoint**: The hold is enforced and explained in the UI — flagged records are provably safe from auto-delivery.
 
@@ -149,19 +149,19 @@ description: "Task list for Extraction Review — Confidence & Control Step"
 
 ### Tests for User Story 4
 
-- [ ] T028 [P] [US4] Test `records_for_reviewer`-backed `review_queue=true` filter returns only `needs_review` records in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py`
-- [ ] T029 [P] [US4] Test `review-queue-count/` returns the correct count in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py`
-- [ ] T030 [P] [US4] Test new transitions: `extracted`/`sent`/`send_failed` → `needs_review` (select-for-review, appends "Selected for review by <user>" to `needs_review_reason`) and `rejected` → `needs_review` (reject re-open) via `update_status`, in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py`
+- [X] T028 [P] [US4] Test `records_for_reviewer`-backed `review_queue=true` filter returns only `needs_review` records in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py`
+- [X] T029 [P] [US4] Test `review-queue-count/` returns the correct count in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py`
+- [X] T030 [P] [US4] Test new transitions: `extracted`/`sent`/`send_failed` → `needs_review` (select-for-review, appends "Selected for review by <user>" to `needs_review_reason`) and `rejected` → `needs_review` (reject re-open) via `update_status`, in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py`
 
 ### Implementation for User Story 4
 
-- [ ] T031 [US4] Add a `review_queue` boolean predicate to `ExtractionRecordFilterSet` in `backend/django/apps/document_entries/filters.py` (initially: `status=needs_review` scoped to the requesting user's accessible document types — the `records_for_reviewer` refinement lands in Phase 11 once `ReviewerAssignment` exists)
-- [ ] T032 [US4] Add a `review-queue-count/` list-level `@action` (`detail=False`, `methods=["get"]`) to `ExtractionRecordViewSet` in `backend/django/apps/document_entries/extraction_record_view_set.py`, returning `{"count": <int>}` using the same `review_queue` predicate
-- [ ] T033 [US4] Extend `update_status` handling in `backend/django/apps/document_entries/extraction_record_view_set.py` / `UpdateStatusSerializer` in `serializers.py` to append `"Selected for review by {user}"` to `needs_review_reason` when the target status is `needs_review` and the source was not already `needs_review`
-- [ ] T034 [US4] Add a `NeedsReviewPage.tsx` in `client/src/app/documentEntry/records/` that reuses `ExtractionRecordListPage.tsx`'s list components filtered by `review_queue=true`
-- [ ] T035 [US4] Add a **Needs Review** entry with a pending-count badge to `client/src/app/layout/DefaultNav.tsx`, routed to `NeedsReviewPage`. Fetch `review-queue-count/` only when the section is expanded; refresh via react-query `staleTime` + `refetchOnWindowFocus` (and query invalidation on confirm/reject), not a tight `refetchInterval` (if any interval is used, keep it coarse — minutes)
-- [ ] T036 [US4] Remove the `needs_review` option from the status filter in `client/src/app/documentEntry/records/components/RecordFilters.tsx`
-- [ ] T037 [US4] Add a **Select for review** control to `client/src/app/documentEntry/records/ExtractionRecordDetailPage.tsx` (and/or the list row actions) for non-`needs_review` records, calling `update_status` with `{"status": "needs_review"}`
+- [X] T031 [US4] Add a `review_queue` boolean predicate to `ExtractionRecordFilterSet` in `backend/django/apps/document_entries/filters.py` (initially: `status=needs_review` scoped to the requesting user's accessible document types — the `records_for_reviewer` refinement lands in Phase 11 once `ReviewerAssignment` exists)
+- [X] T032 [US4] Add a `review-queue-count/` list-level `@action` (`detail=False`, `methods=["get"]`) to `ExtractionRecordViewSet` in `backend/django/apps/document_entries/extraction_record_view_set.py`, returning `{"count": <int>}` using the same `review_queue` predicate
+- [X] T033 [US4] Extend `update_status` handling in `backend/django/apps/document_entries/extraction_record_view_set.py` / `UpdateStatusSerializer` in `serializers.py` to append `"Selected for review by {user}"` to `needs_review_reason` when the target status is `needs_review` and the source was not already `needs_review`
+- [X] T034 [US4] Add a `NeedsReviewPage.tsx` in `client/src/app/documentEntry/records/` that reuses `ExtractionRecordListPage.tsx`'s list components filtered by `review_queue=true`
+- [X] T035 [US4] Add a **Needs Review** entry with a pending-count badge to `client/src/app/layout/DefaultNav.tsx`, routed to `NeedsReviewPage`. Fetch `review-queue-count/` only when the section is expanded; refresh via react-query `staleTime` + `refetchOnWindowFocus` (and query invalidation on confirm/reject), not a tight `refetchInterval` (if any interval is used, keep it coarse — minutes)
+- [X] T036 [US4] Remove the `needs_review` option from the status filter in `client/src/app/documentEntry/records/components/RecordFilters.tsx`
+- [X] T037 [US4] Add a **Select for review** control to `client/src/app/documentEntry/records/ExtractionRecordDetailPage.tsx` (and/or the list row actions) for non-`needs_review` records, calling `update_status` with `{"status": "needs_review"}`
 
 **Checkpoint**: The dedicated queue, count, and select-for-review flow work end-to-end.
 
@@ -175,16 +175,16 @@ description: "Task list for Extraction Review — Confidence & Control Step"
 
 ### Tests for User Story 5
 
-- [ ] T038 [P] [US5] Test `correct/` endpoint: values persist, `is_manually_edited=True`, `raw_value` untouched, `confidence` untouched, status untouched, allowed on `sent` records, type-validation 400s, in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py`
-- [ ] T039 [P] [US5] Test corrections produce before→after `LogEntry` diffs via the newly registered `ExtractedFieldValue` auditlog, in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py`
+- [X] T038 [P] [US5] Test `correct/` endpoint: values persist, `is_manually_edited=True`, `raw_value` untouched, `confidence` untouched, status untouched, allowed on `sent` records, type-validation 400s, in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py`
+- [X] T039 [P] [US5] Test corrections produce before→after `LogEntry` diffs via the newly registered `ExtractedFieldValue` auditlog, in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py`
 
 ### Implementation for User Story 5
 
-- [ ] T040 [US5] Add a `CorrectValuesSerializer` (`values: [{"field_value_id", "value"}]`) in `backend/django/apps/document_entries/serializers.py`, validating each value against its `ExtractedFieldValue.field_type` (reuse the wizard's `FieldConfig` validation)
-- [ ] T041 [US5] Add `correct` `@action` (`detail=True`, `methods=["post"]`) to `ExtractionRecordViewSet` in `backend/django/apps/document_entries/extraction_record_view_set.py`: writes `standardized_value`/`display_value`, sets `is_manually_edited=True`, never touches `status` or `confidence`
-- [ ] T042 [US5] Add `original_value` (from `raw_value`) to the field-value representation in `ExtractionRecordDetailSerializer` in `backend/django/apps/document_entries/serializers.py`
-- [ ] T043 [US5] Add inline click-to-edit correction to `client/src/app/documentEntry/components/FieldTable.tsx`: before → after display from `original_value`, an "edited" badge when `is_manually_edited`, confidence kept and shown alongside the badge
-- [ ] T044 [US5] Wire `FieldTable.tsx`'s save action to `POST /extraction-records/{id}/correct/` from `client/src/app/documentEntry/records/ExtractionRecordDetailPage.tsx`
+- [X] T040 [US5] Add a `CorrectValuesSerializer` (`values: [{"field_value_id", "value"}]`) in `backend/django/apps/document_entries/serializers.py`, validating each value against its `ExtractedFieldValue.field_type` (reuse the wizard's `FieldConfig` validation)
+- [X] T041 [US5] Add `correct` `@action` (`detail=True`, `methods=["post"]`) to `ExtractionRecordViewSet` in `backend/django/apps/document_entries/extraction_record_view_set.py`: writes `standardized_value`/`display_value`, sets `is_manually_edited=True`, never touches `status` or `confidence`
+- [X] T042 [US5] Add `original_value` (from `raw_value`) to the field-value representation in `ExtractionRecordDetailSerializer` in `backend/django/apps/document_entries/serializers.py` — implemented as: `raw_value` (already serialized) *is* the original value; added the missing `is_manually_edited` to `ExtractedFieldValueSerializer` instead of a duplicate alias field
+- [X] T043 [US5] Add inline click-to-edit correction to `client/src/app/documentEntry/components/FieldTable.tsx`: before → after display from `original_value`, an "edited" badge when `is_manually_edited`, confidence kept and shown alongside the badge
+- [X] T044 [US5] Wire `FieldTable.tsx`'s save action to `POST /extraction-records/{id}/correct/` from `client/src/app/documentEntry/records/ExtractionRecordDetailPage.tsx`
 
 **Checkpoint**: Correction works on any record status with a visible audit trail.
 
@@ -198,16 +198,16 @@ description: "Task list for Extraction Review — Confidence & Control Step"
 
 ### Tests for User Story 6
 
-- [ ] T045 [P] [US6] Test `resend_policy=block` refuses `POST /route-deliveries/{id}/send/` for an already successfully delivered record (was previously the `prevent_duplicates` + no-override 409 case; now unconditional) in `backend/django/tests/test_apps/test_document_entries/test_route_delivery_viewset.py`
-- [ ] T046 [P] [US6] Test a re-send after correction carries the corrected payload and creates a new `DeliveryAttempt`, in `backend/django/tests/test_apps/test_document_entries/test_route_delivery_viewset.py`
-- [ ] T047 [P] [US6] Migration test: `delivery_mode` removal migration sets `review_config.all_records=True` for document types owning a `manual` route, in `backend/django/tests/test_apps/test_document_entries/test_migrations.py`
+- [X] T045 [P] [US6] Test `resend_policy=block` refuses `POST /route-deliveries/{id}/send/` for an already successfully delivered record (was previously the `prevent_duplicates` + no-override 409 case; now unconditional) in `backend/django/tests/test_apps/test_document_entries/test_route_delivery_viewset.py`
+- [X] T046 [P] [US6] Test a re-send after correction carries the corrected payload and creates a new `DeliveryAttempt`, in `backend/django/tests/test_apps/test_document_entries/test_route_delivery_viewset.py`
+- [X] T047 [P] [US6] Migration test: `delivery_mode` removal migration sets `review_config.all_records=True` for document types owning a `manual` route — implemented in `backend/django/tests/test_migrations/test_apps/test_document_entries/test_migration_helper.py` (repo convention: migration-helper tests live under `tests/test_migrations/`)
 
 ### Implementation for User Story 6
 
-- [ ] T048 [US6] Move the resend-eligibility guard in `_check_eligibility` (`backend/django/apps/document_entries/route_delivery_view_set.py`) from payload-hash comparison to `resend_policy == ResendPolicy.BLOCK and delivery already succeeded` (`last_successful_payload_hash is not None` or status has ever been `SENT`)
-- [ ] T049 [US6] Add a data migration in `backend/django/apps/document_entries/migrations/` that sets `review_config.all_records = True` on every `DocumentType` owning an `OutputRoute` with `delivery_mode = manual`, then drop the `delivery_mode` column and the now-unused `DeliveryMode` enum from `models.py`/`enums.py` — **user-confirmed migrate**; remove the `MANUAL`/`PENDING_APPROVAL` parking branch from `initialize_and_dispatch` in `backend/django/apps/document_entries/services.py` (keep `PENDING_APPROVAL` in `RouteDeliveryStatus` for historical rows)
-- [ ] T050 [US6] Update `OutputRouteForm.tsx` in `client/src/app/documentEntry/components/`: rename the `repeat_policy` field/labels to **Resend policy** (Allow/Block) and remove the **Delivery Mode** field entirely
-- [ ] T051 [US6] Update all `repeat_policy`/`delivery_mode` references in `client/src/app/documentEntry/components/DeliverySection.tsx` and any shared `types.ts`/`utils.ts` in `client/src/app/documentEntry/records/` to the renamed field and dropped column
+- [X] T048 [US6] Move the resend-eligibility guard in `_check_eligibility` (`backend/django/apps/document_entries/route_delivery_view_set.py`) from payload-hash comparison to `resend_policy == ResendPolicy.BLOCK and delivery already succeeded` (`last_successful_payload_hash is not None` or status has ever been `SENT`)
+- [X] T049 [US6] Add a data migration in `backend/django/apps/document_entries/migrations/` that sets `review_config.all_records = True` on every `DocumentType` owning an `OutputRoute` with `delivery_mode = manual`, then drop the `delivery_mode` column and the now-unused `DeliveryMode` enum from `models.py`/`enums.py` — **user-confirmed migrate**; remove the `MANUAL`/`PENDING_APPROVAL` parking branch from `initialize_and_dispatch` in `backend/django/apps/document_entries/services.py` (keep `PENDING_APPROVAL` in `RouteDeliveryStatus` for historical rows)
+- [X] T050 [US6] Update `OutputRouteForm.tsx` in `client/src/app/documentEntry/components/`: rename the `repeat_policy` field/labels to **Resend policy** (Allow/Block) and remove the **Delivery Mode** field entirely
+- [X] T051 [US6] Update all `repeat_policy`/`delivery_mode` references in `client/src/app/documentEntry/components/DeliverySection.tsx` and any shared `types.ts`/`utils.ts` in `client/src/app/documentEntry/records/` to the renamed field and dropped column
 
 **Checkpoint**: Re-send + delivery-setting changes work; a manual-mode document type behaves identically via the review-all rule.
 
@@ -221,17 +221,17 @@ description: "Task list for Extraction Review — Confidence & Control Step"
 
 ### Tests for User Story 7
 
-- [ ] T052 [P] [US7] Test that each review-lifecycle action emits an **explicit `LogEntry`** (via `LogEntryManager.log_create`) with a formatted `changes_text`: flagged-for-review (at extraction write-back), confirm, correct, reject, select-for-review, resend — and that corrections additionally produce auditlog's automatic before→after diffs on `ExtractedFieldValue`, in new `backend/django/tests/test_apps/test_audit/test_audit_view_set.py`
-- [ ] T053 [P] [US7] Test org isolation and actor exclusion: a user cannot see `LogEntry` rows for another organisation's records through `GET /api/v1/audit/` (scoped via the new `organisation` column), and rows with non-org, `is_staff`, or null/system actors are excluded from results, in `backend/django/tests/test_apps/test_audit/test_audit_view_set.py`
+- [X] T052 [P] [US7] Test that each review-lifecycle action emits an **explicit `LogEntry`** (via `LogEntryManager.log_create`) with a formatted `changes_text`: flagged-for-review (at extraction write-back), confirm, correct, reject, select-for-review, resend — and that corrections additionally produce auditlog's automatic before→after diffs on `ExtractedFieldValue`, in new `backend/django/tests/test_apps/test_audit/test_audit_view_set.py`
+- [X] T053 [P] [US7] Test org isolation and actor exclusion: a user cannot see `LogEntry` rows for another organisation's records through `GET /api/v1/audit/` (scoped via the new `organisation` column), and rows with non-org, `is_staff`, or null/system actors are excluded from results, in `backend/django/tests/test_apps/test_audit/test_audit_view_set.py`
 
 ### Implementation for User Story 7
 
-- [ ] T054 [US7] Add a nullable `organisation` FK column to auditlog's `LogEntry` (migration owned by `backend/django/apps/audit/migrations/`) and a `post_log`-signal receiver in `backend/django/apps/audit/` that populates it at write time — direct org scoping, replacing any object-subquery approach — **user-confirmed migrate**
-- [ ] T055 [US7] Emit explicit `LogEntry` rows via `LogEntryManager.log_create` at the domain moments — flagged-for-review (extraction write-back, T023), confirm/reject (`update_status`), correct (`correct/` action), select-for-review (`update_status` into `needs_review`), resend (`route-deliveries/{id}/send/`) — each with a human-readable `changes_text`, in `backend/django/apps/document_entries/services.py` and the relevant viewsets (actions are logged explicitly, **not** derived from status transitions)
-- [ ] T056 [US7] Add `AuditLogEntrySerializer` in `backend/django/apps/audit/serializers.py` producing the shape from `contracts/api.md` (`actor`, `timestamp`, `action`, `object`, `changes[]`, `change_message`) with `action ∈ flagged_for_review | confirm | correct | reject | select_for_review | resend`
-- [ ] T057 [US7] Add a read-only `AuditViewSet` (`GET /api/v1/audit/`) in `backend/django/apps/audit/views.py`: filters by the requesting user's organisation (via the T054 column) + a `models` query param selecting related model group(s) (`extraction_records` = `ExtractionRecord` + `ExtractedFieldValue`, the only group surfaced now), plus `date_from`, `date_to`, `actor` params and pagination; excludes non-org / `is_staff` / null-actor rows; registered in `backend/django/apps/audit/urls.py`
-- [ ] T058 [US7] Add `client/src/app/audit/AuditPage.tsx`: model filter (only Extraction Records for now), actor/date filters, a table rendering actor/time/action/before→after; system/staff actors never appear
-- [ ] T059 [US7] Add an **Audit** entry under the Organisation area in `client/src/app/layout/DefaultNav.tsx`, routed to `AuditPage`
+- [X] T054 [US7] Add a nullable `organisation` FK column to auditlog's `LogEntry` (migration owned by `backend/django/apps/audit/migrations/`) and a `post_log`-signal receiver in `backend/django/apps/audit/` that populates it at write time — direct org scoping, replacing any object-subquery approach — **user-confirmed migrate**
+- [X] T055 [US7] Emit explicit `LogEntry` rows via `LogEntryManager.log_create` at the domain moments — flagged-for-review (extraction write-back, T023), confirm/reject (`update_status`), correct (`correct/` action), select-for-review (`update_status` into `needs_review`), resend (`route-deliveries/{id}/send/`) — each with a human-readable `changes_text`, in `backend/django/apps/document_entries/services.py` and the relevant viewsets (actions are logged explicitly, **not** derived from status transitions)
+- [X] T056 [US7] Add `AuditLogEntrySerializer` in `backend/django/apps/audit/serializers.py` producing the shape from `contracts/api.md` (`actor`, `timestamp`, `action`, `object`, `changes[]`, `change_message`) with `action ∈ flagged_for_review | confirm | correct | reject | select_for_review | resend`
+- [X] T057 [US7] Add a read-only `AuditViewSet` (`GET /api/v1/audit/`) in `backend/django/apps/audit/views.py`: filters by the requesting user's organisation (via the T054 column) + a `models` query param selecting related model group(s) (`extraction_records` = `ExtractionRecord` + `ExtractedFieldValue`, the only group surfaced now), plus `date_from`, `date_to`, `actor` params and pagination; excludes non-org / `is_staff` / null-actor rows; registered in `backend/django/apps/audit/urls.py`
+- [X] T058 [US7] Add `client/src/app/audit/AuditPage.tsx`: model filter (only Extraction Records for now), actor/date filters, a table rendering actor/time/action/before→after; system/staff actors never appear
+- [X] T059 [US7] Add an **Audit** entry under the Organisation area in `client/src/app/layout/DefaultNav.tsx`, routed to `AuditPage`
 
 **Checkpoint**: The audit surface is live and org-isolated for the shipped subsystem.
 
@@ -245,12 +245,12 @@ description: "Task list for Extraction Review — Confidence & Control Step"
 
 ### Tests for User Story 8
 
-- [ ] T060 [P] [US8] Test the detail serializer's `applied_threshold`/per-value `below_threshold` fields reflect the document type's `review_config` correctly, in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py`
+- [X] T060 [P] [US8] Test the detail serializer's `applied_threshold`/per-value `below_threshold` fields reflect the document type's `review_config` correctly, in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py`
 
 ### Implementation for User Story 8
 
-- [ ] T061 [US8] Add `applied_threshold` (echoed from `review_config`) and per-value `below_threshold: bool` to `ExtractionRecordDetailSerializer` in `backend/django/apps/document_entries/serializers.py`
-- [ ] T062 [US8] Use the server-provided `below_threshold`/`applied_threshold` for highlighting and a recommendation banner in `client/src/app/documentEntry/components/FieldTable.tsx` and `client/src/app/documentEntry/components/ConfidenceBar.tsx` (replacing any client-side threshold fallback from the VWE-1460 work, so the rule lives in one place)
+- [X] T061 [US8] Add `applied_threshold` (echoed from `review_config`) and per-value `below_threshold: bool` to `ExtractionRecordDetailSerializer` in `backend/django/apps/document_entries/serializers.py`
+- [X] T062 [US8] Use the server-provided `below_threshold`/`applied_threshold` for highlighting and a recommendation banner in `client/src/app/documentEntry/components/FieldTable.tsx` and `client/src/app/documentEntry/components/ConfidenceBar.tsx` (replacing any client-side threshold fallback from the VWE-1460 work, so the rule lives in one place)
 
 **Checkpoint**: Highlighting is server-driven and consistent with the flagging rules.
 
@@ -264,26 +264,26 @@ description: "Task list for Extraction Review — Confidence & Control Step"
 
 ### Tests for User Story 9
 
-- [ ] T063 [P] [US9] Test `ReviewerAssignment` creation grants the seeded Reviewer `RoleAssignment`, and removing the last assignment revokes it, in `backend/django/tests/test_apps/test_document_entries/test_reviewer_assignment.py` (new file)
-- [ ] T064 [P] [US9] Test `records_for_reviewer(user)`: assigned reviewer sees only their document types' `needs_review` records; workspace admin/manager sees zero-assignment document types' records too; org isolation, in `backend/django/tests/test_apps/test_document_entries/test_reviewer_assignment.py`
-- [ ] T065 [P] [US9] Test `GET/PUT /document-types/{id}/reviewers/`: PUT replaces the set, non-member user → 400, requires `document_types:edit`, in `backend/django/tests/test_apps/test_document_entries/test_document_type_viewset.py`
-- [ ] T066 [P] [US9] Test `ExtractionRecordLock`: claim/contest (409 with holder)/release/expiry (5 min); expiry unblocks `correct`/`update_status`; removing a reviewer's assignment releases their active locks, in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py`
+- [X] T063 [P] [US9] Test `ReviewerAssignment` creation grants the seeded Reviewer `RoleAssignment`, and removing the last assignment revokes it, in `backend/django/tests/test_apps/test_document_entries/test_reviewer_assignment.py` (new file)
+- [X] T064 [P] [US9] Test `records_for_reviewer(user)`: assigned reviewer sees only their document types' `needs_review` records; workspace admin/manager sees zero-assignment document types' records too; org isolation, in `backend/django/tests/test_apps/test_document_entries/test_reviewer_assignment.py`
+- [X] T065 [P] [US9] Test `GET/PUT /document-types/{id}/reviewers/`: PUT replaces the set, non-member user → 400, requires `document_types:edit`, in `backend/django/tests/test_apps/test_document_entries/test_document_type_viewset.py`
+- [X] T066 [P] [US9] Test `ExtractionRecordLock`: claim/contest (409 with holder)/release/expiry (5 min); expiry unblocks `correct`/`update_status`; removing a reviewer's assignment releases their active locks, in `backend/django/tests/test_apps/test_document_entries/test_extraction_record_viewset.py`
 
 ### Implementation for User Story 9
 
-- [ ] T067 [P] [US9] Add `ReviewerAssignment` model (`organisation` FK, `document_type` FK `related_name="reviewer_assignments"`, `user` FK, `created_by` FK, `UniqueConstraint(document_type, user)`, auditlog-registered) in `backend/django/apps/document_entries/models.py`
-- [ ] T068 Run `docker compose exec django python manage.py makemigrations document_entries` for T067 — **user-confirmed migrate**
-- [ ] T069 [US9] Add a data migration/fixture seeding an org-scoped `Role(identifier="reviewer", permissions=[DOCUMENT_ENTRIES_REVIEW])` per organisation (or a signal on organisation creation, matching how other seeded roles are created) — **user-confirmed migrate**
-- [ ] T070 [US9] Add `save`/`delete` signal handling in `backend/django/apps/document_entries/signals.py` (or a service method) so a user's first `ReviewerAssignment` grants the Reviewer `RoleAssignment` and their last removal revokes it; removing an assignment also **releases the user's active `ExtractionRecordLock`s** on that document type's records (edge case: reviewer removed mid-edit)
-- [ ] T071 [US9] Implement `records_for_reviewer(user)` and `can_review(user, record)` in `backend/django/apps/document_entries/services.py`: assigned document types' `needs_review` records, plus (for users with `document_types:edit` acting as admin/manager) document types with zero `ReviewerAssignment` rows
-- [ ] T072 [US9] Wire `records_for_reviewer` into the `review_queue` filter from T031 in `backend/django/apps/document_entries/filters.py`, replacing the Phase 6 placeholder scoping
-- [ ] T073 [US9] Add `ReviewerAssignmentSerializer` (`GET`/`PUT` `{"reviewers": [...]}` / `{"user_ids": [...]}`) validating org/workspace membership, in `backend/django/apps/document_entries/serializers.py`
-- [ ] T074 [US9] Add `reviewers` `@action` (`detail=True`, `methods=["get", "put"]`, requires `document_types:edit`) to `DocumentTypeViewSet` in `backend/django/apps/document_entries/document_type_view_set.py`
-- [ ] T075 [US9] Refactor `ResourceLockViewSet` in `backend/django/apps/locks/base/views.py` into an **MFA-free base mixin** holding the core acquire/release logic (create + holder-checked `destroy`/`perform_destroy`, with the shared `AuditlogActorMixin`/`HashidGetObjectMixin`/`OrgQuerySetMixin`) plus a layered class adding the `@mfa_required` overrides and the `transfer`/`override`/`redeem` (`AbstractAccessOverride`) actions for the existing application-lock use case — behaviour of the existing application-lock endpoints unchanged
-- [ ] T075b [US9] Add `ExtractionRecordLockSerializer` in `backend/django/apps/document_entries/serializers.py` and mount the T075 base mixin as a `claim`/`unclaim` `@action` pair (`detail=True`, `methods=["post", "delete"]`, `url_path="claim"`) on `ExtractionRecordViewSet` in `backend/django/apps/document_entries/extraction_record_view_set.py` — no MFA, no `AbstractAccessOverride`, 5-minute `expires_at`, 409 with current holder when contested; no cloned lock logic
-- [ ] T076 [US9] Return a `lock` object (`null` when free) on `ExtractionRecordDetailSerializer`, and enforce 409 in `correct` (T041) and `update_status` when another user holds an unexpired lock, in `backend/django/apps/document_entries/extraction_record_view_set.py`
-- [ ] T077 [US9] Add a reviewer multi-select (existing org/workspace members) to `client/src/app/documentEntry/documentTypes/steps/ReviewRecordsStep.tsx`, calling `GET/PUT /document-types/{id}/reviewers/`
-- [ ] T078 [US9] Add a lock banner ("being reviewed by X") to `client/src/app/documentEntry/records/ExtractionRecordDetailPage.tsx`, claiming the lock on entering edit mode and releasing on exit/unmount
+- [X] T067 [P] [US9] Add `ReviewerAssignment` model (`organisation` FK, `document_type` FK `related_name="reviewer_assignments"`, `user` FK, `created_by` FK, `UniqueConstraint(document_type, user)`, auditlog-registered) in `backend/django/apps/document_entries/models.py`
+- [X] T068 Run `docker compose exec django python manage.py makemigrations document_entries` for T067 — **user-confirmed migrate**
+- [X] T069 [US9] Add a data migration/fixture seeding an org-scoped `Role(identifier="reviewer", permissions=[DOCUMENT_ENTRIES_REVIEW])` per organisation (or a signal on organisation creation, matching how other seeded roles are created) — **user-confirmed migrate**
+- [X] T070 [US9] Add `save`/`delete` signal handling in `backend/django/apps/document_entries/signals.py` (or a service method) so a user's first `ReviewerAssignment` grants the Reviewer `RoleAssignment` and their last removal revokes it; removing an assignment also **releases the user's active `ExtractionRecordLock`s** on that document type's records (edge case: reviewer removed mid-edit)
+- [X] T071 [US9] Implement `records_for_reviewer(user)` and `can_review(user, record)` in `backend/django/apps/document_entries/services.py`: assigned document types' `needs_review` records, plus (for users with `document_types:edit` acting as admin/manager) document types with zero `ReviewerAssignment` rows
+- [X] T072 [US9] Wire `records_for_reviewer` into the `review_queue` filter from T031 in `backend/django/apps/document_entries/filters.py`, replacing the Phase 6 placeholder scoping
+- [X] T073 [US9] Add `ReviewerAssignmentSerializer` (`GET`/`PUT` `{"reviewers": [...]}` / `{"user_ids": [...]}`) validating org/workspace membership, in `backend/django/apps/document_entries/serializers.py`
+- [X] T074 [US9] Add `reviewers` `@action` (`detail=True`, `methods=["get", "put"]`, requires `document_types:edit`) to `DocumentTypeViewSet` in `backend/django/apps/document_entries/document_type_view_set.py`
+- [X] T075 [US9] Refactor `ResourceLockViewSet` in `backend/django/apps/locks/base/views.py` into an **MFA-free base mixin** holding the core acquire/release logic (create + holder-checked `destroy`/`perform_destroy`, with the shared `AuditlogActorMixin`/`HashidGetObjectMixin`/`OrgQuerySetMixin`) plus a layered class adding the `@mfa_required` overrides and the `transfer`/`override`/`redeem` (`AbstractAccessOverride`) actions for the existing application-lock use case — behaviour of the existing application-lock endpoints unchanged
+- [X] T075b [US9] Add `ExtractionRecordLockSerializer` in `backend/django/apps/document_entries/serializers.py` and mount the T075 base mixin as a `claim`/`unclaim` `@action` pair (`detail=True`, `methods=["post", "delete"]`, `url_path="claim"`) on `ExtractionRecordViewSet` in `backend/django/apps/document_entries/extraction_record_view_set.py` — no MFA, no `AbstractAccessOverride`, 5-minute `expires_at`, 409 with current holder when contested; no cloned lock logic
+- [X] T076 [US9] Return a `lock` object (`null` when free) on `ExtractionRecordDetailSerializer`, and enforce 409 in `correct` (T041) and `update_status` when another user holds an unexpired lock, in `backend/django/apps/document_entries/extraction_record_view_set.py`
+- [X] T077 [US9] Add a reviewer multi-select (existing org/workspace members) to `client/src/app/documentEntry/documentTypes/steps/ReviewRecordsStep.tsx`, calling `GET/PUT /document-types/{id}/reviewers/`
+- [X] T078 [US9] Add a lock banner ("being reviewed by X") to `client/src/app/documentEntry/records/ExtractionRecordDetailPage.tsx`, claiming the lock on entering edit mode and releasing on exit/unmount
 
 **Checkpoint**: Reviewer assignment, scoped queue, role grant/revoke, and locking all work together.
 
@@ -293,8 +293,8 @@ description: "Task list for Extraction Review — Confidence & Control Step"
 
 **Purpose**: Final validation across all stories.
 
-- [ ] T079 [P] Add any remaining new i18n keys to `client/src/translations/en.json` only (secondary locale files are translated later in bulk — leave untouched)
-- [ ] T080 Run the full behaviour suite: `docker compose exec django pytest tests/test_apps/test_document_entries/ tests/test_apps/test_audit/ -x -q` from `backend/`
+- [X] T079 [P] Add any remaining new i18n keys to `client/src/translations/en.json` only (secondary locale files are translated later in bulk — leave untouched)
+- [X] T080 Run the full behaviour suite: `docker compose exec django pytest tests/test_apps/test_document_entries/ tests/test_apps/test_audit/ -x -q` from `backend/`
 - [ ] T081 Walk through [quickstart.md](./quickstart.md)'s "Exercise the feature" steps end-to-end against a running stack
 
 ---
