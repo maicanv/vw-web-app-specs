@@ -46,7 +46,7 @@ Record UID selection and a distinct post-review delivery method/UID were dropped
 ### ExtractionRecord — schema unchanged, behaviour changes
 
 - `overall_confidence` — mean of field confidences (D1), now compared against `review_config` rules at extraction write-back.
-- `needs_review_reason` — newline-joined structured reasons ("Overall confidence 61% below threshold 80%", "Field 'IBAN' 42% below threshold 80%", "Confidence unavailable", "Selected for review by Jane Doe") describing why the record is **currently** in `needs_review`. **Cleared on exit** (confirm → `extracted`, reject → `rejected`), so no record in another status carries a stale reason. A persisted-forever reason is a data-consistency hazard (every consumer would have to reason about a maybe-stale value on any status). Evidence that a record was reviewed lives in the audit log (explicit `log_create` entries at flag/confirm/correct/reject), not on the record — no `originally_flagged`-from-text inference.
+- `needs_review_reason` — newline-joined structured reasons ("Overall confidence 61% below threshold 80%", "Field 'IBAN' 42% below threshold 80%", "Confidence unavailable", "Selected for review by Jane Doe") describing why the record is **currently** in `needs_review`. **Cleared on exit** (confirm → `extracted`, reject → `rejected`), so no record in another status carries a stale reason. A persisted-forever reason is a data-consistency hazard (every consumer would have to reason about a maybe-stale value on any status). Evidence that a record was reviewed lives in the audit log (explicit `log_action` entries at flag/confirm/correct/reject), not on the record — no `originally_flagged`-from-text inference.
 
 ### ExtractedFieldValue — schema unchanged
 
@@ -54,14 +54,21 @@ Record UID selection and a distinct post-review delivery method/UID were dropped
 - `standardized_value` / `display_value` — overwritten by corrections (after).
 - `is_manually_edited` — set `True` by the correction endpoint.
 - `confidence` — never mutated (D4); UI shows the edited badge.
-- **Now `@auditlog.register`ed** (currently unregistered) so corrections yield before → after LogEntry diffs for the Audit section.
+- **Now `@auditlog.register`ed** (currently unregistered) so it can be selected as part of the `extraction_records` subsystem.
 
 ### auditlog LogEntry (django-auditlog)
 
-Source for the platform Audit API (`apps/audit`). Changes:
-- **+ `organisation` column** (nullable FK) populated by a `post_log`-signal receiver at write time → the audit endpoint filters by org directly (replaces the org-scoped-object-subquery approach).
-- Review-lifecycle actions (`confirm`, `correct`, `reject`, `select_for_review`, `resend`) are **logged explicitly** via `LogEntryManager.log_create` with a formatted `changes_text` at the domain moments — not derived from status transitions (which would couple the audit layer to the transition machinery). Corrections still use auditlog's automatic before → after diffs on `ExtractedFieldValue`.
-- The audit view filters by org + related model(s); `ExtractionRecord` + `ExtractedFieldValue` are surfaced now. Non-org / `is_staff` / null (system) actors are **excluded** from the view so Django-admin and internal edits do not leak to org users.
+Source for the platform Audit API (`apps/audit`). **Unchanged** — no swapped model, no added column, no second migration history on `auditlog_logentry`:
+- Review-lifecycle actions (`flagged_for_review`, `confirm`, `correct`, `reject`, `select_for_review`, `resend`) are **logged explicitly** through the audit app's single writer, `log_action`, with a formatted `changes_text` and the domain action name in `additional_data["audit_action"]` at the domain moments — not derived from status transitions (which would couple the audit layer to the transition machinery). Each entry is created complete, including its before → after diff, and never updated; correction diffs are passed by the caller rather than harvested from auditlog's automatic `ExtractedFieldValue` diff.
+- The audit view joins the link table for org scoping (see below) and filters by registered subsystem; `ExtractionRecord` + `ExtractedFieldValue` are surfaced now. Non-org and `is_staff` actors are **excluded** from the view so Django-admin and internal edits do not leak to org users; null-actor rows are kept, since the flagged-for-review moment is logged by the system.
+
+### OrganisationAuditEntry (`apps/audit`) — new
+
+Organisation index over auditlog entries. Insert-only; never updated.
+- `log_entry` — `OneToOneField` to `auditlog.LogEntry`, `CASCADE`, `related_name="org_link"`.
+- `organisation` — FK, `CASCADE`. The link is derived data: dropping an organisation drops its index rows while the trail itself survives in `auditlog_logentry`.
+- `timestamp` — immutable copy of `log_entry.timestamp`, so `(organisation, -timestamp)` can be indexed together and drive both ordering and the date filters.
+- Written by `log_action` in the same transaction as the entry. It is the **only** writer, so link membership is the visibility boundary of the org feed: automatic auditlog diffs, and explicit entries with no derivable organisation, get no link row and never surface. Because everything joined was written by `log_action`, every listed row carries `additional_data["audit_action"]` — no JSON filtering needed in the view.
 
 ## New models
 
