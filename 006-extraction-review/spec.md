@@ -133,7 +133,7 @@ A user discovers an error in a record that was already delivered, corrects the v
 
 ### User Story 7 - Platform-wide audit section (Priority: P2)
 
-A new **Audit** section under the Organisation area of the sidebar lets a user inspect what happened across subsystems, not only in the admin panel. The user filters by subsystem; **Extraction Record modification** is the first subsystem shown. For each audited action the section shows who acted, when, what changed (before → after), and the action type (confirm, correct, reject, re-send). The flag moment itself is audited as its own event, so whether (and why) a record was originally flagged for low confidence is visible in the same trail.
+A new **Audit** section under the Organisation area of the sidebar lets an organisation administrator inspect what happened across subsystems, without needing the Django admin panel. It is admin-only: the feed shows every member's actions and can be filtered by actor, so non-admin roles do not see the entry point and are denied by the API. The administrator filters by subsystem; **Extraction Record modification** is the first subsystem shown. For each audited action the section shows who acted, when, what changed (before → after), and the action type (confirm, correct, reject, re-send). The flag moment itself is audited as its own event, so whether (and why) a record was originally flagged for low confidence is visible in the same trail.
 
 **Why this priority**: Accountability for a workflow that gates data flowing into financial/ERP systems. Meaningful once Stories 3–6 produce actions to audit.
 
@@ -142,7 +142,7 @@ A new **Audit** section under the Organisation area of the sidebar lets a user i
 **Acceptance Scenarios**:
 
 1. **Given** a record is confirmed, corrected, rejected, or re-sent, **Then** the system records who did it, when, what changed (before → after), and the action type; **and given** a record was flagged for review, **Then** the flag event and its reason appear in the same audit trail.
-2. **Given** I am a product user (not an admin-panel user), **Then** I can view this history in the Audit section.
+2. **Given** I am an organisation administrator, **Then** I can view this history in the Audit section without the Django admin panel; **and given** I hold any non-admin org role, **Then** the sidebar entry is hidden and the endpoint denies me.
 3. **Given** I open the Audit section, **Then** I can filter by subsystem, with Extraction Record modification available as the first subsystem.
 
 ---
@@ -231,8 +231,8 @@ An admin assigns reviewers to a document type, choosing from existing org/worksp
 #### Audit
 
 - **FR-019**: System MUST record for every confirm/correct/reject/re-send: actor, timestamp, action type, and changed values (before → after). The flag moment (which rule fired, why) MUST be recorded as its own audit event, so whether a record was originally flagged is reconstructable from the trail — it is not stored on each action row.
-- **FR-020**: A platform-wide Audit section MUST exist under the Organisation area of the sidebar, viewable by product users (not only the admin panel).
-- **FR-021**: The Audit section MUST let users filter by subsystem, with Extraction Record modification available as the first subsystem.
+- **FR-020**: A platform-wide Audit section MUST exist under the Organisation area of the sidebar, usable without the Django admin panel, and MUST be restricted to organisation administrators — API, route and sidebar entry all gated on the `admin` permission.
+- **FR-021**: The Audit section MUST let administrators filter by subsystem, with Extraction Record modification available as the first subsystem.
 
 #### Signalling
 
