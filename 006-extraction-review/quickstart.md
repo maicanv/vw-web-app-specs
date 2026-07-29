@@ -17,7 +17,7 @@ Services: Django http://127.0.0.1:8001, client http://localhost:5173 (`npm start
 4. **Review**: open the record from the queue (a 5-minute hard lock is claimed) → correct a value inline (before → after, edited badge, confidence kept) → **Confirm & Send** or **Reject**. A second user opening the same record sees "being reviewed by X" and gets 409 on edits.
 5. **Select for review**: on an unflagged (or rejected) record, use **Select for review** and verify it joins the queue.
 6. **Re-send**: correct a value on a `sent` record whose route's **Resend policy** is Allow → re-send → new delivery attempt with the corrected payload, using the route's normal delivery method and UID (unchanged). On a route with Block, the re-send is refused.
-7. **Audit**: sidebar Organisation area → **Audit** → subsystem "Extraction Record modification" → verify actor, time, action type, before → after, and the originally-flagged marker for each step above.
+7. **Audit**: sidebar Organisation area → **Audit** → subsystem "Document entries" → verify actor, time, action type, before → after, and the originally-flagged marker for each step above.
 
 ## Tests
 

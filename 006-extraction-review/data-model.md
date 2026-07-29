@@ -54,13 +54,13 @@ Record UID selection and a distinct post-review delivery method/UID were dropped
 - `standardized_value` / `display_value` — overwritten by corrections (after).
 - `is_manually_edited` — set `True` by the correction endpoint.
 - `confidence` — never mutated (D4); UI shows the edited badge.
-- **Now `@auditlog.register`ed** (currently unregistered) so it can be selected as part of the `extraction_records` subsystem.
+- **Now `@auditlog.register`ed** (currently unregistered) so field-level history exists in the admin; the org feed lists corrections against the record, not the value.
 
 ### auditlog LogEntry (django-auditlog)
 
 Source for the platform Audit API (`apps/audit`). **Unchanged** — no swapped model, no added column, no second migration history on `auditlog_logentry`:
 - Review-lifecycle actions (`flagged_for_review`, `confirm`, `correct`, `reject`, `select_for_review`, `resend`) are **logged explicitly** through the audit app's single writer, `log_action`, with a formatted `changes_text` and the domain action name in `additional_data["audit_action"]` at the domain moments — not derived from status transitions (which would couple the audit layer to the transition machinery). Each entry is created complete, including its before → after diff, and never updated; correction diffs are passed by the caller rather than harvested from auditlog's automatic `ExtractedFieldValue` diff.
-- The audit view joins the link table for org scoping (see below) and filters by registered subsystem; `ExtractionRecord` + `ExtractedFieldValue` are surfaced now. Non-org and `is_staff` actors are **excluded** from the view so Django-admin and internal edits do not leak to org users; null-actor rows are kept, since the flagged-for-review moment is logged by the system.
+- The audit view joins the link table for org scoping (see below) and filters by subsystem, which is the owning Django app (`content_type__app_label`) — nothing is registered; `document_entries` is the subsystem surfaced now. Non-org and `is_staff` actors are **excluded** from the view so Django-admin and internal edits do not leak to org users; null-actor rows are kept, since the flagged-for-review moment is logged by the system.
 
 ### OrganisationAuditEntry (`apps/audit`) — new
 

@@ -51,7 +51,7 @@ Response `200`: record detail (existing serializer) with per-value additions:
 
 ### 2. Platform audit — `GET /api/v1/audit/`
 
-New thin `apps/audit` read-only endpoint over auditlog (FR-019..021). django-auditlog and its table are left unmodified; org scoping goes through an `apps/audit`-owned link table (`OrganisationAuditEntry`: one-to-one to the log entry, organisation FK, immutable copy of the entry timestamp, indexed on `(organisation, -timestamp)`), which the view joins for scoping, ordering and the date filters. Query params: `models` (subsystem key registered by the owning feature; `extraction_records` = `ExtractionRecord` + `ExtractedFieldValue` is the only group shipped), `date_from`, `date_to`, `actor`, pagination. Rows with non-org or `is_staff` actors are excluded, so Django-admin and internal edits never surface to org users; null-actor rows are **kept** (the flagged-for-review moment is logged by the system).
+New thin `apps/audit` read-only endpoint over auditlog (FR-019..021). django-auditlog and its table are left unmodified; org scoping goes through an `apps/audit`-owned link table (`OrganisationAuditEntry`: one-to-one to the log entry, organisation FK, immutable copy of the entry timestamp, indexed on `(organisation, -timestamp)`), which the view joins for scoping, ordering and the date filters. Query params: `subsystem` (the owning Django app label, matched against the entry's content type; `document_entries` is the only one shipped), `date_from`, `date_to`, `actor`, pagination. Rows with non-org or `is_staff` actors are excluded, so Django-admin and internal edits never surface to org users; null-actor rows are **kept** (the flagged-for-review moment is logged by the system).
 
 **Access: `admin` only.** `AuditAccessPolicy` gates `list` on `user_has_permission:admin` — the feed exposes every member's actions and is filterable by actor, so it is not a per-role read. A non-admin org role gets `403` with `missing_permission: "admin"`. The frontend mirrors it (route `handle.permissions` + sidebar entry), and since `admin` implies `users:view` the actor filter always has its user list.
 
@@ -65,7 +65,7 @@ Response `200`:
       "actor": {"id": 7, "name": "Jane Doe"},
       "timestamp": "2026-07-07T14:03:00Z",
       "action": "correct",
-      "object": {"type": "extraction_record", "id": "aB3xK", "label": "Invoice INV-2041"},
+      "object": {"type": "extractionrecord", "id": "aB3xK", "label": "Invoice INV-2041"},
       "changes": [{"field": "IBAN", "before": "NL91ABNA0417164", "after": "NL91ABNA0417164300"}],
       "change_message": "Corrected 1 value on Invoice INV-2041"
     }
@@ -73,7 +73,7 @@ Response `200`:
 }
 ```
 
-`action` ∈ `flagged_for_review | confirm | correct | reject | select_for_review | resend`. Read-only, paginated. Permission: existing document-entry view access for the `extraction_records` model group; future areas surface by selecting their models and bring their own guard.
+`action` ∈ `flagged_for_review | confirm | correct | reject | select_for_review | resend` — the `document_entries` vocabulary, defined as a `ReviewAuditAction(AuditAction)` subclass; other subsystems contribute their own verbs and the feed renders unknown ones verbatim. `object.type` is the content type's model name. Read-only, paginated, `admin`-gated as above.
 
 ### 3. Reviewer assignment — `GET/PUT /document-types/{id}/reviewers/`
 
